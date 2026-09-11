@@ -52,8 +52,6 @@ Government and institutional portals are often complex, repetitive, and frustrat
 - Python Telegram Bot
 
 ## Architecture Overview
-
-```mermaid
 flowchart TB
     subgraph Frontend["Frontend (React + Vite)"]
         UI["React Router\n/dashboard · /form-search\n/session/:id · /execution/:id"]
@@ -65,7 +63,7 @@ flowchart TB
         Auth["POST /auth/login\nPOST /auth/register"]
         Docs["POST /documents/upload\n(DocVault → OCR)"]
         Search["POST /search/form\n(FormSearch → Gemini)"]
-        Chat["POST /chat\nWS /ws/{session_id}"]
+        Chat["POST /chat\nWS /ws/:session_id"]
         Sessions["GET /sessions\n/start · /execute"]
         TelegramHook["POST /telegram/webhook\nGET /telegram/link-token"]
     end
@@ -92,7 +90,7 @@ flowchart TB
     UI -->|HTTP + JWT| Chat
     UI -->|HTTP + JWT| Sessions
     UI -->|WebSocket| WS_Client
-    WS_Client -->|ws:///ws/{session_id}| Chat
+    WS_Client -->|WS /ws/:session_id| Chat
 
     Sessions --> ScriptGen --> Executor
     Executor -->|Playwright| WebPilot
@@ -110,8 +108,6 @@ flowchart TB
     Executor --> Redis
     Sessions --> Notifier
     Notifier --> TelegramAPI[("Telegram API")]
-```
-
 ## Quick Start
 
 ### 1. Clone the Repository
