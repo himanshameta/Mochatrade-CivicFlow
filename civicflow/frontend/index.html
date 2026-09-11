@@ -1,252 +1,581 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CivicFlow - Automated Form Filling</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CivicFlow — Automated Government Forms</title>
+  <meta name="description" content="AI-powered government form filling for Indian citizens. Upload documents, let Sahayak guide you through every step.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
-    <div class="container">
-        <!-- Header -->
-        <header class="header">
-            <div class="logo">
-                <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-                    <rect width="32" height="32" rx="8" fill="#f97316"/>
-                    <path d="M8 16L14 22L24 10" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-                <h1>CivicFlow</h1>
-            </div>
-            <div class="session-info" id="sessionInfo" style="display: none;">
-                <span class="session-label">Session:</span>
-                <span class="session-id" id="sessionId">-</span>
-            </div>
-        </header>
 
-        <!-- Error Banner -->
-        <div class="error-banner" id="errorBanner" style="display: none;">
-            <span class="error-icon">⚠</span>
-            <span class="error-message" id="errorMessage"></span>
-            <button class="error-close" onclick="hideError()">×</button>
-        </div>
-
-        <!-- VIEW 1: Start -->
-        <div id="view-start" class="view active">
-            <div class="view-content">
-                <div class="hero">
-                    <h2 class="hero-title">Automate Any Web Form</h2>
-                    <p class="hero-subtitle">AI-powered form filling that learns from your documents</p>
-                </div>
-
-                <div class="url-input-wrapper">
-                    <input 
-                        type="url" 
-                        id="formUrl" 
-                        class="url-input" 
-                        placeholder="Paste the form URL here (e.g., https://example.com/form)"
-                        autofocus
-                    />
-                    <button class="btn btn-primary" id="btnAnalyze" onclick="startSession()">
-                        <span class="btn-text">Analyze Form</span>
-                        <span class="btn-icon">→</span>
-                    </button>
-                </div>
-
-                <div class="features">
-                    <div class="feature">
-                        <span class="feature-icon">🤖</span>
-                        <span class="feature-text">AI-powered field detection</span>
-                    </div>
-                    <div class="feature">
-                        <span class="feature-icon">📄</span>
-                        <span class="feature-text">Auto-fill from documents</span>
-                    </div>
-                    <div class="feature">
-                        <span class="feature-icon">⚡</span>
-                        <span class="feature-text">One-click submission</span>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- VIEW 2: Documents Upload -->
-        <div id="view-documents" class="view">
-            <div class="view-content">
-                <div class="progress-header">
-                    <span class="progress-step active">1. Upload Documents</span>
-                    <span class="progress-step">2. Review Data</span>
-                    <span class="progress-step">3. Execute</span>
-                </div>
-
-                <h2 class="view-title">Upload Your Documents</h2>
-                <p class="view-description">Upload any documents containing your information. We'll extract data automatically.</p>
-
-                <div class="upload-zone" id="uploadZone">
-                    <svg class="upload-icon" width="64" height="64" viewBox="0 0 64 64" fill="none">
-                        <path d="M32 8V40M32 8L20 20M32 8L44 20" stroke="#f97316" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-                        <path d="M8 48V52C8 54.2091 9.79086 56 12 56H52C54.2091 56 56 54.2091 56 52V48" stroke="#94a3b8" stroke-width="3" stroke-linecap="round"/>
-                    </svg>
-                    <p class="upload-text">Drag and drop files here or <span class="upload-link">browse</span></p>
-                    <p class="upload-hint">Supported: PDF, JPG, PNG • Aadhaar, PAN, Marksheets, etc.</p>
-                    <input type="file" id="fileInput" class="file-input" multiple accept=".pdf,.jpg,.jpeg,.png,.bmp,.tiff">
-                </div>
-
-                <div class="file-list" id="fileList"></div>
-
-                <button class="btn btn-primary btn-full" id="btnProcessDocs" onclick="processDocuments()" style="display: none;">
-                    <span class="btn-text">Process Documents</span>
-                    <span class="btn-icon">→</span>
-                </button>
-            </div>
-        </div>
-
-        <!-- VIEW 3: Data Collection -->
-        <div id="view-collect" class="view">
-            <div class="view-content">
-                <div class="progress-header">
-                    <span class="progress-step completed">1. Upload Documents</span>
-                    <span class="progress-step active">2. Review Data</span>
-                    <span class="progress-step">3. Execute</span>
-                </div>
-
-                <h2 class="view-title">Review & Complete Your Information</h2>
-                <p class="view-description" id="collectDescription">Fields extracted from your documents are pre-filled. Please review and complete any missing information.</p>
-
-                <div class="data-form" id="dataForm"></div>
-
-                <button class="btn btn-primary btn-full" id="btnStartFilling" onclick="startFormFilling()">
-                    <span class="btn-text">Start Form Filling</span>
-                    <span class="btn-icon">→</span>
-                </button>
-            </div>
-        </div>
-
-        <!-- VIEW 4: Running Automation -->
-        <div id="view-running" class="view">
-            <div class="view-content">
-                <div class="progress-header">
-                    <span class="progress-step completed">1. Upload Documents</span>
-                    <span class="progress-step completed">2. Review Data</span>
-                    <span class="progress-step active">3. Execute</span>
-                </div>
-
-                <h2 class="view-title">Form Automation in Progress</h2>
-                <p class="view-description">Our AI agents are filling out your form. This usually takes 30-60 seconds.</p>
-
-                <!-- CHANGE 1: Browser Visibility Notice -->
-                <div id="browserNotice" class="notice-banner" style="display: none;">
-                    🤖 Automation browser is now open on your screen. 
-                    Watch as CivicFlow fills the form for you!
-                    Do not close that window.
-                </div>
-
-                <!-- Pause Banners -->
-                <div class="pause-banner pause-captcha" id="pauseCaptcha" style="display: none;">
-                    <div class="pause-header">
-                        <span class="pause-icon">🤖</span>
-                        <div>
-                            <h3>CAPTCHA Detected</h3>
-                            <p>Please solve the CAPTCHA in the browser window, then click Resume below.</p>
-                        </div>
-                    </div>
-                    <img id="captchaScreenshot" class="pause-screenshot" style="display: none;">
-                    <button class="btn btn-warning" onclick="resumeAfterCaptcha()">
-                        <span class="btn-text">I Solved It - Resume</span>
-                        <span class="btn-icon">▶</span>
-                    </button>
-                </div>
-
-                <div class="pause-banner pause-otp" id="pauseOtp" style="display: none;">
-                    <div class="pause-header">
-                        <span class="pause-icon">📱</span>
-                        <div>
-                            <h3>OTP Verification Required</h3>
-                            <p>Enter the verification code sent to your phone or email.</p>
-                        </div>
-                    </div>
-                    <div class="otp-input-group">
-                        <input type="text" id="otpInput" class="otp-input" placeholder="Enter OTP" maxlength="6">
-                        <button class="btn btn-warning" onclick="resumeAfterOtp()">
-                            <span class="btn-text">Submit OTP</span>
-                        </button>
-                    </div>
-                </div>
-
-                <!-- CHANGE 2: Live Step Tracker -->
-                <div class="live-tracker">
-                    <h3 class="tracker-title">Live Progress</h3>
-                    <div class="live-steps" id="liveSteps"></div>
-                </div>
-
-                <!-- Static Status Timeline -->
-                <div class="status-timeline" id="statusTimeline">
-                    <div class="timeline-item completed">
-                        <span class="timeline-icon">✓</span>
-                        <span class="timeline-text">Form analyzed</span>
-                    </div>
-                    <div class="timeline-item completed">
-                        <span class="timeline-icon">✓</span>
-                        <span class="timeline-text">Documents processed</span>
-                    </div>
-                    <div class="timeline-item completed">
-                        <span class="timeline-icon">✓</span>
-                        <span class="timeline-text">Data collected</span>
-                    </div>
-                    <div class="timeline-item active">
-                        <span class="timeline-icon spinner">⟳</span>
-                        <span class="timeline-text">Filling form fields...</span>
-                    </div>
-                    <div class="timeline-item">
-                        <span class="timeline-icon">○</span>
-                        <span class="timeline-text">Submitting form</span>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- VIEW 5: Complete -->
-        <div id="view-complete" class="view">
-            <div class="view-content">
-                <div class="success-animation">
-                    <div class="success-checkmark">
-                        <svg class="checkmark" viewBox="0 0 52 52">
-                            <circle class="checkmark-circle" cx="26" cy="26" r="25" fill="none"/>
-                            <path class="checkmark-check" fill="none" d="M14 27l7 7 16-16"/>
-                        </svg>
-                    </div>
-                </div>
-
-                <h2 class="success-title">Form Submitted Successfully!</h2>
-                <p class="success-description">Your form has been filled and submitted. Check your email for confirmation.</p>
-
-                <div class="success-details">
-                    <div class="detail-row">
-                        <span class="detail-label">Session ID:</span>
-                        <span class="detail-value" id="completedSessionId">-</span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="detail-label">Completed:</span>
-                        <span class="detail-value" id="completedTime">-</span>
-                    </div>
-                </div>
-
-                <button class="btn btn-primary btn-full" onclick="resetApp()">
-                    <span class="btn-text">Fill Another Form</span>
-                    <span class="btn-icon">→</span>
-                </button>
-            </div>
-        </div>
-
-        <!-- Loading Overlay -->
-        <div class="loading-overlay" id="loadingOverlay" style="display: none;">
-            <div class="loading-spinner"></div>
-            <p class="loading-text" id="loadingText">Processing...</p>
-        </div>
+<!-- ═══════════════════════════════════════════════════
+     GLOBAL HEADER
+═══════════════════════════════════════════════════ -->
+<header class="app-header" id="appHeader" style="display:none">
+  <div class="header-inner">
+    <a href="#dashboard" class="header-logo">
+      <svg width="28" height="28" viewBox="0 0 32 32" fill="none">
+        <rect width="32" height="32" rx="8" fill="url(#logoGrad)"/>
+        <path d="M8 16L14 22L24 10" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+        <defs>
+          <linearGradient id="logoGrad" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
+            <stop stop-color="#86b89a"/>
+            <stop offset="1" stop-color="#4a8a64"/>
+          </linearGradient>
+        </defs>
+      </svg>
+      <span class="logo-text">CivicFlow</span>
+    </a>
+    <nav class="header-nav">
+      <a href="#dashboard" class="nav-link" data-page="dashboard">Dashboard</a>
+      <a href="#form-search" class="nav-link" data-page="form-search">Find Form</a>
+    </nav>
+    <div class="header-right">
+      <div class="tg-status" id="tgStatus" title="Telegram not linked">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21.198 2.433a2.242 2.242 0 0 0-1.022.215l-16.5 6.75a2.25 2.25 0 0 0 .126 4.238l3.636 1.154 2.25 6.75a.75.75 0 0 0 1.338.207L13.572 18l4.963 3.687a2.25 2.25 0 0 0 3.468-1.618l1.5-16.5a2.25 2.25 0 0 0-2.305-2.136z"/>
+        </svg>
+        <span id="tgStatusText">Link Telegram</span>
+      </div>
+      <div class="user-pill" id="userPill">
+        <div class="user-avatar" id="userAvatar">?</div>
+        <span id="userNameDisplay">User</span>
+      </div>
+      <button class="btn-icon-only" id="btnLogout" onclick="App.logout()" title="Logout">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>
+        </svg>
+      </button>
     </div>
+  </div>
+</header>
 
-    <script src="app.js"></script>
+<!-- ═══════════════════════════════════════════════════
+     VIEWS CONTAINER
+═══════════════════════════════════════════════════ -->
+<main class="main-content" id="mainContent">
+
+  <!-- VIEW: Login / Register -->
+  <div class="view" id="view-login">
+    <div class="auth-layout">
+      <div class="auth-brand">
+        <div class="brand-logo">
+          <svg width="48" height="48" viewBox="0 0 32 32" fill="none">
+            <rect width="32" height="32" rx="8" fill="url(#logoGrad2)"/>
+            <path d="M8 16L14 22L24 10" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+            <defs>
+              <linearGradient id="logoGrad2" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
+                <stop stop-color="#86b89a"/>
+                <stop offset="1" stop-color="#4a8a64"/>
+              </linearGradient>
+            </defs>
+          </svg>
+          <h1>CivicFlow</h1>
+        </div>
+        <p class="brand-tagline">AI-powered government form filling for every citizen</p>
+        <div class="brand-features">
+          <div class="brand-feature"><span>🤖</span> Sahayak guides you step by step</div>
+          <div class="brand-feature"><span>📄</span> Auto-extract from Aadhaar, PAN & more</div>
+          <div class="brand-feature"><span>🔒</span> AES-256 encrypted, zero-trust storage</div>
+          <div class="brand-feature"><span>🌐</span> Works with any government portal</div>
+        </div>
+      </div>
+      <div class="auth-form-card glass-card">
+        <!-- Tab switcher -->
+        <div class="auth-tabs">
+          <button class="auth-tab active" id="tabLogin" onclick="App.showAuthTab('login')">Sign In</button>
+          <button class="auth-tab" id="tabRegister" onclick="App.showAuthTab('register')">Create Account</button>
+        </div>
+
+        <!-- Login Form -->
+        <form id="loginForm" onsubmit="App.login(event)">
+          <div class="form-group">
+            <label for="loginEmail">Email Address</label>
+            <input type="email" id="loginEmail" placeholder="you@example.com" required autocomplete="email">
+          </div>
+          <div class="form-group">
+            <label for="loginPassword">Password</label>
+            <input type="password" id="loginPassword" placeholder="••••••••" required autocomplete="current-password">
+          </div>
+          <button type="submit" class="btn btn-primary btn-full" id="btnLogin">
+            <span class="btn-text">Sign In</span>
+            <span class="btn-loader hidden"></span>
+          </button>
+        </form>
+
+        <!-- Register Form -->
+        <form id="registerForm" class="hidden" onsubmit="App.register(event)">
+        <div class="form-group">
+            <label for="regName">Full Name</label>
+            <input type="text" id="regName" placeholder="Your full name" required>
+          </div>
+          <div class="form-group">
+            <label for="regEmail">Email Address</label>
+            <input type="email" id="regEmail" placeholder="you@example.com" required>
+          </div>
+          <div class="form-group">
+            <label for="regPhone">Phone Number</label>
+            <input type="tel" id="regPhone" placeholder="10-digit number" required>
+          </div>
+          <div class="form-group">
+            <label for="regPassword">Password</label>
+            <input type="password" id="regPassword" placeholder="Min 8 characters" required>
+          </div>
+          <div class="form-group">
+            <label>Account Type</label>
+            <div class="role-toggle">
+              <button type="button" class="role-btn active" id="rolePrimary" onclick="App.setRole('primary')">Primary Account</button>
+              <button type="button" class="role-btn" id="roleRelative" onclick="App.setRole('relative')">Relative Account</button>
+            </div>
+          </div>
+          <button type="submit" class="btn btn-primary btn-full" id="btnRegister">
+            <span class="btn-text">Create Account</span>
+            <span class="btn-loader hidden"></span>
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- VIEW: Profile Setup (multi-step) -->
+  <div class="view" id="view-profile-setup">
+    <div class="setup-layout">
+      <div class="setup-main">
+        <!-- Step progress -->
+        <div class="step-progress" id="setupProgress">
+          <div class="step-item active" data-step="1"><div class="step-dot">1</div><span>Basic Info</span></div>
+          <div class="step-connector"></div>
+          <div class="step-item" data-step="2"><div class="step-dot">2</div><span>Documents</span></div>
+          <div class="step-connector"></div>
+          <div class="step-item" data-step="3"><div class="step-dot">3</div><span>Review</span></div>
+          <div class="step-connector"></div>
+          <div class="step-item" data-step="4"><div class="step-dot">4</div><span>Done</span></div>
+        </div>
+
+        <!-- Profile completion bar -->
+        <div class="completion-bar-wrapper">
+          <div class="completion-bar-label">
+            <span>Profile Completion</span>
+            <span id="setupCompletionPct">0%</span>
+          </div>
+          <div class="completion-track"><div class="completion-fill" id="setupCompletionFill" style="width:0%"></div></div>
+        </div>
+
+        <!-- Step 1: Basic Info -->
+        <div class="setup-step glass-card" id="setupStep1">
+          <h2>Basic Information</h2>
+          <p class="step-desc">This is securely encrypted and used to pre-fill your forms.</p>
+          <form id="basicInfoForm" onsubmit="App.saveBasicInfo(event)">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="fullName">Full Name (as on Aadhaar)</label>
+                <input type="text" id="fullName" placeholder="e.g. Ramesh Kumar Sharma" required>
+              </div>
+              <div class="form-group">
+                <label for="dob">Date of Birth</label>
+                <input type="date" id="dob" required>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="gender">Gender</label>
+                <select id="gender">
+                  <option value="">Select</option>
+                  <option value="M">Male</option>
+                  <option value="F">Female</option>
+                  <option value="O">Other</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="pincode">Pincode</label>
+                <input type="text" id="pincode" placeholder="6-digit pincode" maxlength="6">
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="address">Address</label>
+              <textarea id="address" rows="3" placeholder="House/Flat, Street, Area, City"></textarea>
+            </div>
+            <button type="submit" class="btn btn-primary">Continue to Documents →</button>
+          </form>
+        </div>
+
+        <!-- Step 2: Document Upload -->
+        <div class="setup-step glass-card hidden" id="setupStep2">
+          <h2>Upload Documents</h2>
+          <p class="step-desc">We'll extract your details automatically using AI. Encrypted before storage.</p>
+          <div class="upload-zone" id="setupUploadZone">
+            <div class="upload-icon">📤</div>
+            <p class="upload-label">Drag & drop documents here</p>
+            <p class="upload-hint">Aadhaar, PAN, Passport, Marksheet — PDF or image</p>
+            <button type="button" class="btn btn-outline" onclick="document.getElementById('setupFileInput').click()">Browse Files</button>
+            <input type="file" id="setupFileInput" class="hidden" multiple accept=".pdf,.jpg,.jpeg,.png,.tiff,.webp">
+          </div>
+          <div id="setupFileList" class="file-list"></div>
+          <div class="setup-doc-type">
+            <label for="docType">Document Type</label>
+            <select id="docType">
+              <option value="aadhaar">Aadhaar Card</option>
+              <option value="pan">PAN Card</option>
+              <option value="passport">Passport</option>
+              <option value="marksheet">Marksheet</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <div class="step-actions">
+            <button class="btn btn-outline" onclick="App.setupGoStep(1)">← Back</button>
+            <button class="btn btn-primary" id="btnUploadDocs" onclick="App.uploadSetupDocuments()">Process & Continue →</button>
+          </div>
+        </div>
+
+        <!-- Step 3: Review Extracted Data -->
+        <div class="setup-step glass-card hidden" id="setupStep3">
+          <h2>Review Extracted Data</h2>
+          <p class="step-desc">Green = high confidence. Orange = needs your confirmation.</p>
+          <div id="extractedFieldsReview"></div>
+          <div id="conflictsPanel" class="conflicts-panel hidden"></div>
+          <div class="step-actions">
+            <button class="btn btn-outline" onclick="App.setupGoStep(2)">← Back</button>
+            <button class="btn btn-primary" onclick="App.confirmExtractedData()">Looks Good ✓</button>
+          </div>
+        </div>
+
+        <!-- Step 4: Done -->
+        <div class="setup-step glass-card hidden" id="setupStep4">
+          <div class="success-view">
+            <div class="success-icon">✅</div>
+            <h2>Profile Ready!</h2>
+            <p>Your profile is set up and encrypted. CivicFlow can now fill forms for you automatically.</p>
+            <button class="btn btn-primary" onclick="App.navigate('dashboard')">Go to Dashboard →</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Counsellor sidebar -->
+      <aside class="counsellor-sidebar" id="setupCounsellor">
+        <div class="counsellor-header">
+          <div class="counsellor-avatar">🤖</div>
+          <div>
+            <div class="counsellor-name">Sahayak</div>
+            <div class="counsellor-status">Online</div>
+          </div>
+        </div>
+        <div class="counsellor-messages" id="setupCounsellorMessages"></div>
+        <form class="counsellor-input-row" onsubmit="App.sendCounsellorMessage(event, 'setup')">
+          <input type="text" id="setupChatInput" placeholder="Ask Sahayak anything..." autocomplete="off">
+          <button type="submit" class="btn-send">↑</button>
+        </form>
+      </aside>
+    </div>
+  </div>
+
+  <!-- VIEW: Dashboard -->
+  <div class="view" id="view-dashboard">
+    <div class="dashboard-layout">
+      <div class="dashboard-main">
+        <div class="page-hero">
+          <h2>Welcome back, <span id="dashUserName">there</span> 👋</h2>
+          <p>What would you like to do today?</p>
+        </div>
+
+        <!-- Quick actions -->
+        <div class="quick-actions">
+          <a href="#form-search" class="quick-card glass-card">
+            <div class="quick-icon">🔍</div>
+            <div>
+              <div class="quick-title">Fill a New Form</div>
+              <div class="quick-desc">Search for any government service</div>
+            </div>
+          </a>
+          <div class="quick-card glass-card" onclick="App.navigate('profile-setup')">
+            <div class="quick-icon">👤</div>
+            <div>
+              <div class="quick-title">Update Profile</div>
+              <div class="quick-desc">Add or correct your information</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Profile completion card -->
+        <div class="glass-card completion-card">
+          <div class="completion-card-header">
+            <h3>Profile Completion</h3>
+            <span class="completion-badge" id="dashCompletionBadge">0%</span>
+          </div>
+          <div class="completion-track">
+            <div class="completion-fill" id="dashCompletionFill" style="width:0%"></div>
+          </div>
+          <p class="completion-hint" id="dashCompletionHint">Complete your profile so forms can be filled automatically.</p>
+        </div>
+
+        <!-- Telegram Status -->
+        <div class="glass-card tg-link-card" id="tgLinkCard">
+          <div class="tg-link-inner">
+            <div class="tg-icon">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>
+            </div>
+            <div>
+              <div class="tg-title" id="tgLinkTitle">Link Telegram for Notifications</div>
+              <div class="tg-desc" id="tgLinkDesc">Get real-time updates on your phone</div>
+            </div>
+          </div>
+          <button class="btn btn-outline btn-sm" id="tgLinkBtn" onclick="App.linkTelegram()">Link Now</button>
+        </div>
+
+        <!-- Active Sessions -->
+        <div class="section-header">
+          <h3>Active Sessions</h3>
+          <button class="btn btn-outline btn-sm" onclick="App.refreshSessions()">Refresh</button>
+        </div>
+        <div id="sessionsList" class="sessions-list">
+          <div class="empty-state">No active sessions. Start by filling a form!</div>
+        </div>
+
+        <!-- Recent Activity -->
+        <div class="section-header" style="margin-top:2rem">
+          <h3>Recent Activity</h3>
+        </div>
+        <div id="activityTimeline" class="activity-timeline">
+          <div class="empty-state">No recent activity yet.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- VIEW: Form Search -->
+  <div class="view" id="view-form-search">
+    <div class="page-container">
+      <div class="page-hero">
+        <h2>Find a Government Form</h2>
+        <p>Describe what you need or paste a direct URL</p>
+      </div>
+
+      <!-- Toggle -->
+      <div class="search-mode-toggle glass-card">
+        <button class="mode-btn active" id="modeDescribe" onclick="App.setSearchMode('describe')">Describe Service</button>
+        <button class="mode-btn" id="modePasteUrl" onclick="App.setSearchMode('url')">Paste URL</button>
+      </div>
+
+      <!-- Describe Mode -->
+      <div id="searchDescribePanel" class="glass-card search-panel">
+        <div class="form-group">
+          <label for="serviceSearch">What do you need help with?</label>
+          <input type="text" id="serviceSearch" placeholder="e.g. Apply for Passport, Renew Driving Licence, PAN Card...">
+        </div>
+        <div class="form-group">
+          <label for="stateSearch">State (optional)</label>
+          <input type="text" id="stateSearch" placeholder="e.g. Maharashtra, Tamil Nadu">
+        </div>
+        <button class="btn btn-primary" onclick="App.searchForm()">
+          <span class="btn-text">Search Portals</span>
+        </button>
+      </div>
+
+      <!-- URL Mode -->
+      <div id="searchUrlPanel" class="glass-card search-panel hidden">
+        <div class="form-group">
+          <label for="directUrl">Portal URL</label>
+          <input type="url" id="directUrl" placeholder="https://passportindia.gov.in/...">
+        </div>
+        <div class="verify-row" id="urlVerifyRow" style="display:none">
+          <div class="verify-badge" id="urlVerifyBadge"></div>
+        </div>
+        <button class="btn btn-primary" onclick="App.useDirectUrl()">Verify &amp; Use This URL →</button>
+      </div>
+
+      <!-- Results -->
+      <div id="searchResults" class="search-results hidden">
+        <h3>Found Portals</h3>
+        <div id="searchResultCards"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- VIEW: Form Review -->
+  <div class="view" id="view-form-review">
+    <div class="form-review-layout">
+      <div class="form-review-main">
+        <div class="page-hero">
+          <h2>Review Before Filing</h2>
+          <p id="reviewFormTitle">Loading form details...</p>
+        </div>
+        <div class="field-legend">
+          <span class="legend-item"><span class="dot dot-green"></span> Auto-filled</span>
+          <span class="legend-item"><span class="dot dot-orange"></span> Needs input</span>
+          <span class="legend-item"><span class="dot dot-red"></span> Conflict</span>
+        </div>
+        <div class="glass-card" id="reviewFormFields"></div>
+        <div class="review-actions">
+          <button class="btn btn-outline" onclick="App.navigate('form-search')">← Change Form</button>
+          <button class="btn btn-primary" onclick="App.confirmAndFill()">Confirm &amp; Start Filling →</button>
+        </div>
+      </div>
+      <aside class="counsellor-sidebar">
+        <div class="counsellor-header">
+          <div class="counsellor-avatar">🤖</div>
+          <div>
+            <div class="counsellor-name">Sahayak</div>
+            <div class="counsellor-status">Online</div>
+          </div>
+        </div>
+        <div class="counsellor-messages" id="reviewCounsellorMessages"></div>
+        <form class="counsellor-input-row" onsubmit="App.sendCounsellorMessage(event, 'review')">
+          <input type="text" id="reviewChatInput" placeholder="Ask about any field..." autocomplete="off">
+          <button type="submit" class="btn-send">↑</button>
+        </form>
+      </aside>
+    </div>
+  </div>
+
+  <!-- VIEW: Execution -->
+  <div class="view" id="view-execution">
+    <div class="execution-layout">
+      <div class="execution-main">
+        <div class="page-hero">
+          <h2>Form Filling in Progress</h2>
+          <p id="execStatusText">Connecting to automation...</p>
+        </div>
+
+        <!-- Progress bar -->
+        <div class="exec-progress glass-card">
+          <div class="exec-progress-header">
+            <span id="execFieldLabel">Starting...</span>
+            <span id="execProgressPct">0%</span>
+          </div>
+          <div class="exec-track"><div class="exec-fill" id="execFill" style="width:0%"></div></div>
+        </div>
+
+        <!-- CAPTCHA pause -->
+        <div class="pause-panel glass-card hidden" id="captchaPause">
+          <div class="pause-icon-big">🤖</div>
+          <h3>CAPTCHA Detected</h3>
+          <p>Please solve the CAPTCHA in the automation browser, then click Resume.</p>
+          <img id="captchaScreenshot" class="pause-screenshot hidden" alt="CAPTCHA screenshot">
+          <button class="btn btn-warning" onclick="App.resumeAfterCaptcha()">I Solved It — Resume ▶</button>
+        </div>
+
+        <!-- OTP pause -->
+        <div class="pause-panel glass-card hidden" id="otpPause">
+          <div class="pause-icon-big">📱</div>
+          <h3>OTP Verification Required</h3>
+          <p>Enter the code sent to your phone or email.</p>
+          <div class="otp-row">
+            <input type="text" id="otpInput" class="otp-input" placeholder="000000" maxlength="6">
+            <button class="btn btn-warning" onclick="App.resumeAfterOtp()">Submit OTP</button>
+          </div>
+        </div>
+
+        <!-- Live field tracker -->
+        <div class="glass-card">
+          <h3 class="section-title">Field-by-Field Progress</h3>
+          <div id="liveFieldTracker" class="live-tracker"></div>
+        </div>
+
+        <!-- Screenshot -->
+        <div class="glass-card" id="screenshotCard" style="display:none">
+          <h3 class="section-title">Current Browser State</h3>
+          <img id="execScreenshot" class="exec-screenshot" alt="Browser screenshot">
+        </div>
+      </div>
+
+      <aside class="counsellor-sidebar">
+        <div class="counsellor-header">
+          <div class="counsellor-avatar">🤖</div>
+          <div>
+            <div class="counsellor-name">Sahayak</div>
+            <div class="counsellor-status live-dot">Live</div>
+          </div>
+        </div>
+        <div class="counsellor-messages" id="execCounsellorMessages"></div>
+        <form class="counsellor-input-row" onsubmit="App.sendCounsellorMessage(event, 'execution')">
+          <input type="text" id="execChatInput" placeholder="Ask Sahayak..." autocomplete="off">
+          <button type="submit" class="btn-send">↑</button>
+        </form>
+      </aside>
+    </div>
+  </div>
+
+  <!-- VIEW: Correction -->
+  <div class="view" id="view-correction">
+    <div class="page-container narrow">
+      <div class="glass-card">
+        <div class="correction-icon">⚠️</div>
+        <h2>Correction Needed</h2>
+        <p id="correctionFieldName" class="correction-field-label"></p>
+        <div class="correction-error-box" id="correctionErrorBox"></div>
+        <img id="correctionScreenshot" class="pause-screenshot hidden" alt="Error screenshot">
+        <div class="form-group" style="margin-top:1.5rem">
+          <label for="correctionValue">Corrected Value</label>
+          <input type="text" id="correctionValue" placeholder="Enter the correct value">
+        </div>
+        <div class="step-actions">
+          <button class="btn btn-outline" onclick="App.navigate('dashboard')">Cancel Session</button>
+          <button class="btn btn-primary" onclick="App.submitCorrection()">Resume Automation →</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- VIEW: Session Detail -->
+  <div class="view" id="view-session">
+    <div class="page-container">
+      <div class="page-hero">
+        <h2>Session Detail</h2>
+        <code class="session-code" id="detailSessionId"></code>
+      </div>
+      <div class="glass-card" id="sessionDetailCard">
+        <div class="spinner-center"><div class="spinner"></div></div>
+      </div>
+      <div class="glass-card" style="margin-top:1rem">
+        <h3>Audit Log</h3>
+        <div id="auditLog" class="audit-log"></div>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<!-- ═══════════════════════════════════════════════════
+     FLOATING COUNSELLOR WIDGET
+═══════════════════════════════════════════════════ -->
+<div class="float-counsellor" id="floatCounsellor" style="display:none">
+  <div class="float-chat-window" id="floatChatWindow" style="display:none">
+    <div class="float-chat-header">
+      <div class="counsellor-avatar small">🤖</div>
+      <div>
+        <div class="counsellor-name">Sahayak</div>
+        <div class="counsellor-status">AI Assistant</div>
+      </div>
+      <button class="float-close" onclick="App.toggleFloatCounsellor()">✕</button>
+    </div>
+    <div class="float-chat-messages" id="floatChatMessages"></div>
+    <form class="counsellor-input-row" onsubmit="App.sendCounsellorMessage(event, 'float')">
+      <input type="text" id="floatChatInput" placeholder="Ask anything..." autocomplete="off">
+      <button type="submit" class="btn-send">↑</button>
+    </form>
+  </div>
+  <button class="float-toggle-btn" onclick="App.toggleFloatCounsellor()" title="Chat with Sahayak">
+    <span class="float-icon">🤖</span>
+    <span class="float-unread" id="floatUnread" style="display:none">1</span>
+  </button>
+</div>
+
+<!-- ═══════════════════════════════════════════════════
+     TOAST CONTAINER
+═══════════════════════════════════════════════════ -->
+<div class="toast-container" id="toastContainer"></div>
+
+<!-- ═══════════════════════════════════════════════════
+     LOADING OVERLAY
+═══════════════════════════════════════════════════ -->
+<div class="loading-overlay hidden" id="loadingOverlay">
+  <div class="spinner"></div>
+  <p class="loading-text" id="loadingText">Loading...</p>
+</div>
+
+<script src="js/app.js"></script>
 </body>
 </html>

@@ -7,6 +7,26 @@ services:
       - "6379:6379"
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  mongo:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    environment:
+      - MONGO_INITDB_DATABASE=civicflow
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
 
   backend:
     build:
@@ -16,16 +36,22 @@ services:
       - "8000:8000"
     environment:
       - REDIS_URL=redis://redis:6379
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - MONGO_URI=mongodb://mongo:27017/civicflow
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - JWT_SECRET=${JWT_SECRET:-civicflow-dev-secret-change-in-production}
       - UPLOAD_DIR=/app/uploads
       - MAX_FILE_SIZE_MB=${MAX_FILE_SIZE_MB:-10}
     volumes:
       - ./backend:/app
       - uploads:/app/uploads
     depends_on:
-      - redis
-    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+      redis:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+    command: python main.py
 
 volumes:
   redis_data:
+  mongo_data:
   uploads:

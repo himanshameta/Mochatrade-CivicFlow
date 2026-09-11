@@ -301,12 +301,11 @@ Return ONLY the Python script. No explanation. No markdown code blocks."""
 
     # Try Gemini first
     try:
-        import google.generativeai as genai
+        from google import genai
         api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
         if api_key:
-            genai.configure(api_key=api_key)
-            model = genai.GenerativeModel("gemini-2.0-flash-exp")
-            response = model.generate_content(prompt)
+            client = genai.Client(api_key=api_key)
+            response = client.models.generate_content(model="gemini-2.0-flash-lite", contents=prompt)
             script = response.text.strip()
             # Remove markdown code blocks if AI wrapped it
             if script.startswith("```python"):

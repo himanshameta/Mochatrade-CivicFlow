@@ -8,7 +8,7 @@ import threading
 import queue
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Dict, Optional
 from datetime import datetime
 from redis.asyncio import Redis, from_url
 
@@ -271,7 +271,6 @@ async def check_resume_signal(session_id: str) -> Optional[str]:
     Returns:
         Signal type or None
     """
-    redis_inst = await redis_client.get_redis()
     signal = await redis_client.get(f"resume:{session_id}")
     if signal:
         # Delete the key after reading
@@ -290,7 +289,6 @@ async def check_otp_value(session_id: str) -> Optional[str]:
     Returns:
         OTP value or None
     """
-    redis_inst = await redis_client.get_redis()
     otp = await redis_client.get(f"otp:{session_id}")
     if otp:
         # Delete the key after reading

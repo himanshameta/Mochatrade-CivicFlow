@@ -2,7 +2,7 @@ import os
 import json
 import asyncio
 from typing import Optional
-import google.generativeai as genai
+from google import genai
 import sys
 
 # Add parent directory to path for imports
@@ -29,8 +29,7 @@ async def analyst(scraped_form: ScrapedForm, user_documents_text: dict[str, str]
         if not api_key:
             raise ValueError("GEMINI_API_KEY not found in environment")
         
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-2.0-flash-exp')
+        client = genai.Client(api_key=api_key)
         
         # Step 1: Ask Gemini to analyze the form fields
         system_prompt = """You are a form analysis expert. Given a list of form fields, 
@@ -57,7 +56,10 @@ Return ONLY valid JSON array matching this schema:
         fields_data = [f.model_dump() for f in scraped_form.fields]
         user_message = f"{system_prompt}\n\nForm fields: {json.dumps(fields_data, indent=2)}"
         
-        response = model.generate_content(user_message)
+        response = client.models.generate_content(
+            model='gemini-2.0-flash-lite',
+            contents=user_message
+        )
         response_text = response.text.strip()
         
         # Try to find JSON in response (handle markdown code blocks)
@@ -114,7 +116,10 @@ If you find a matching value, extract it exactly as it appears.
 Return ONLY valid JSON: {{"found": true/false, "value": "extracted value or empty string"}}"""
                 
                 try:
-                    extract_response = model.generate_content(extraction_prompt)
+                    extract_response = client.models.generate_content(
+                        model='gemini-2.0-flash-lite',
+                        contents=extraction_prompt
+                    )
                     extract_text = extract_response.text.strip()
                     
                     # Parse JSON response
@@ -162,7 +167,10 @@ Respond with a JSON object:
 Only respond with the JSON. No explanation."""
                 
                 try:
-                    doc_response = model.generate_content(context_prompt)
+                    doc_response = client.models.generate_content(
+                        model='gemini-2.0-flash-lite',
+                        contents=context_prompt
+                    )
                     doc_text = doc_response.text.strip()
                     
                     # Parse JSON response

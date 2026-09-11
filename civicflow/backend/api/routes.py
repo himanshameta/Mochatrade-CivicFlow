@@ -498,3 +498,101 @@ async def delete_session(session_id: str):
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to delete session: {str(e)}")
+
+
+# ---------------------------------------------------------------------------
+# NEW: Session list
+# ---------------------------------------------------------------------------
+
+@router.get("/sessions", summary="List all sessions")
+async def list_sessions(user_id: Optional[str] = None):
+    """
+    Return a list of sessions, optionally filtered by user_id.
+    Works with MongoDB (full list) and in-memory (current process sessions).
+    Returns empty list for raw Redis mode.
+    """
+    try:
+        sessions = await session_store.list_all(user_id=user_id)
+        return {
+            "sessions": [
+                {
+                    "session_id": s.session_id,
+                    "url": s.url,
+                    "status": s.status,
+                    "created_at": s.created_at.isoformat() if s.created_at else None,
+                    "updated_at": s.updated_at.isoformat() if s.updated_at else None,
+                    "field_count": len(s.data_requirements) if s.data_requirements else 0,
+                }
+                for s in sessions
+            ],
+            "total": len(sessions),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list sessions: {str(e)}")
+
+
+# ---------------------------------------------------------------------------
+# NEW: Script retrieval
+# ---------------------------------------------------------------------------
+
+@router.get("/sessions/{session_id}/script", summary="Get the generated automation script")
+async def get_session_script(session_id: str):
+    """
+    Return the Playwright script generated for this session.
+    The script is saved to uploads/scripts/{session_id}.py during scriptgen.
+    """
+    session = await session_store.load(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    upload_dir = os.getenv("UPLOAD_DIR", "./uploads")
+    script_path = Path(upload_dir) / "scripts" / f"{session_id}.py"
+
+    if not script_path.exists():
+        raise HTTPException(status_code=404, detail="Script not yet generated for this session")
+
+    try:
+        content = script_path.read_text(encoding="utf-8")
+        return {
+            "session_id": session_id,
+            "script": content,
+            "script_path": str(script_path),
+            "size_bytes": script_path.stat().st_size,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read script: {str(e)}")
+
+
+# ---------------------------------------------------------------------------
+# NEW: Form search (LLM-powered government portal discovery)
+# ---------------------------------------------------------------------------
+
+class FormSearchRequest(BaseModel):
+    description: str          # e.g. "I want to apply for a passport"
+    custom_url: Optional[str] = None  # user-provided URL bypass
+
+
+@router.post("/forms/search", summary="Find a government portal by description")
+async def search_form(request: FormSearchRequest):
+    """
+    Given a plain-English description of what the user wants to do,
+    returns the best matching Indian government portal URL.
+
+    Powered by Gemini 2.0 Flash with a pre-seeded list of 24 known portals.
+    Falls back to keyword matching if AI is unavailable.
+    """
+    if not request.description.strip() and not request.custom_url:
+        raise HTTPException(status_code=400, detail="Provide a description or a custom URL")
+
+    try:
+        from agents.form_finder import find_government_portal
+        result = await find_government_portal(
+            description=request.description.strip(),
+            custom_url=request.custom_url,
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Form search failed: {str(e)}")
+

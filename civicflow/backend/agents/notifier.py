@@ -1,7 +1,13 @@
+import os
 import asyncio
 from datetime import datetime
 from typing import Optional
 
+try:
+    from telegram import Bot
+    from telegram.error import TelegramError
+except ImportError:
+    Bot, TelegramError = None, None
 
 async def notify(
     session_id: str,
@@ -183,3 +189,108 @@ if __name__ == "__main__":
         print("=" * 80)
     
     asyncio.run(test_notifier())
+
+# ============================================================================
+# Telegram Notifier
+# ============================================================================
+
+class TelegramNotifier:
+    """
+    Sends notifications to users via Telegram Bot API.
+    Requires user to have linked their Telegram account via /start command.
+    """
+
+    def __init__(self):
+        self.token = os.getenv("TELEGRAM_BOT_TOKEN")
+        self.webhook_secret = os.getenv("TELEGRAM_WEBHOOK_SECRET")
+        if not self.token or Bot is None:
+            print("[Warning] TELEGRAM_BOT_TOKEN missing or python-telegram-bot not installed. Notifications disabled.")
+            self.bot = None
+        else:
+            self.bot = Bot(token=self.token)
+
+    async def setup_webhook(self, url: str) -> bool:
+        """Register webhook URL with Telegram."""
+        if not self.bot:
+            return False
+            
+        try:
+            return await self.bot.set_webhook(
+                url=url,
+                secret_token=self.webhook_secret
+            )
+        except TelegramError as e:
+            print(f"[Telegram Error] Failed to set webhook: {e}")
+            return False
+
+    async def send_message(
+        self, 
+        telegram_chat_id: str, 
+        message: str,
+        parse_mode: str = "HTML"
+    ) -> bool:
+        """Send a plain or HTML-formatted message."""
+        if not self.bot or not telegram_chat_id:
+            return False
+            
+        try:
+            await self.bot.send_message(
+                chat_id=telegram_chat_id,
+                text=message,
+                parse_mode=parse_mode
+            )
+            return True
+        except TelegramError as e:
+            print(f"[Telegram Error] Failed to send message to {telegram_chat_id}: {e}")
+            return False
+
+    async def send_form_started(
+        self, user_name: str, form_name: str, chat_id: str
+    ):
+        """Notify that form filling has started."""
+        msg = f"🚀 <b>Hello {user_name}!</b>\n\nI have started automatically filling your <b>{form_name}</b>. I will keep you updated on the progress."
+        await self.send_message(chat_id, msg)
+
+    async def send_form_completed(
+        self, user_name: str, form_name: str, 
+        application_id: str, chat_id: str
+    ):
+        """Notify form submission was successful with application ID."""
+        msg = (
+            f"✅ <b>Form Completed Successfully!</b>\n\n"
+            f"Your <b>{form_name}</b> has been submitted.\n"
+            f"<b>Application ID:</b> <code>{application_id}</code>\n\n"
+            f"Please keep this ID safe for future reference."
+        )
+        await self.send_message(chat_id, msg)
+
+    async def send_correction_needed(
+        self, field_name: str, error_msg: str, chat_id: str
+    ):
+        """Notify user their input for a specific field needs correction."""
+        msg = (
+            f"⚠️ <b>Action Required</b>\n\n"
+            f"There was an issue with the field: <b>{field_name}</b>\n"
+            f"<i>{error_msg}</i>\n\n"
+            f"Please open the CivicFlow app to correct this."
+        )
+        await self.send_message(chat_id, msg)
+
+    async def send_status_update(
+        self, form_name: str, status: str, chat_id: str
+    ):
+        """Notify about status change from Chronicle agent."""
+        msg = f"🔄 <b>Status Update: {form_name}</b>\n\nCurrently: {status}"
+        await self.send_message(chat_id, msg)
+
+    async def send_document_processed(
+        self, doc_type: str, fields_extracted: int, chat_id: str
+    ):
+        """Notify document OCR is complete."""
+        msg = (
+            f"📄 <b>Document Processed</b>\n\n"
+            f"Your <b>{doc_type}</b> has been successfully scanned.\n"
+            f"Extracted {fields_extracted} fields.\n"
+            f"Please review and confirm them in the app."
+        )
+        await self.send_message(chat_id, msg)

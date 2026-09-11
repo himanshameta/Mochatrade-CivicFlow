@@ -159,6 +159,29 @@ async function processDocuments() {
     }
 }
 
+// Skip document upload — run analysis directly with no docs
+async function skipDocuments() {
+    hideError();
+    showLoading('Analyzing form fields...');
+
+    try {
+        const runResponse = await fetch(`${API_BASE}/sessions/${state.sessionId}/run`, {
+            method: 'POST'
+        });
+
+        if (!runResponse.ok) {
+            const error = await runResponse.json();
+            throw new Error(error.detail || 'Failed to analyze form');
+        }
+
+        await waitForAnalysisComplete();
+
+    } catch (error) {
+        showError(error.message);
+        hideLoading();
+    }
+}
+
 async function waitForAnalysisComplete() {
     const maxAttempts = 20;
     let attempts = 0;
@@ -170,7 +193,14 @@ async function waitForAnalysisComplete() {
             const response = await fetch(`${API_BASE}/sessions/${state.sessionId}/status`);
             const data = await response.json();
 
-            if (data.status === 'collecting' && data.data_requirements && data.data_requirements.length > 0) {
+            // Accept 'collecting' (needs user input) OR 'ready' (all pre-filled from docs)
+            const isAnalysisDone = (
+                (data.status === 'collecting' || data.status === 'ready') &&
+                data.data_requirements &&
+                data.data_requirements.length > 0
+            );
+
+            if (isAnalysisDone) {
                 state.dataRequirements = data.data_requirements;
                 hideLoading();
                 renderDataCollection();
@@ -592,6 +622,9 @@ function showComplete() {
 }
 
 function resetApp() {
+    // Stop any running intervals/ws
+    stopStatusPolling();
+
     state.sessionId = null;
     state.dataRequirements = [];
     state.uploadedFiles = [];

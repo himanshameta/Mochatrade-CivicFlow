@@ -1,19 +1,60 @@
+# ── Core framework ──────────────────────────────────────────────
 fastapi
 uvicorn
-playwright
-langchain
-langgraph
-google-generativeai
-beautifulsoup4
-lxml
-pytesseract
-Pillow
 python-multipart
-redis
-pydantic
 python-dotenv
+pydantic
+pydantic-settings          # Phase 2: config.py BaseSettings
+
+# ── Real-time & async ───────────────────────────────────────────
+websockets
 aiofiles
 httpx
 aiohttp
+python-telegram-bot==21.5
+
+# ── AI / LLM ────────────────────────────────────────────────────
+google-generativeai
+langchain-core==0.1.52
+langchain==0.1.20
+langchain-community==0.0.38
+langgraph==0.0.43
+
+# ── Automation ──────────────────────────────────────────────────
+playwright
+
+# ── Scraping ────────────────────────────────────────────────────
+beautifulsoup4
+lxml
+
+# ── OCR (current) ───────────────────────────────────────────────
+pytesseract
+Pillow
 PyPDF2
-websockets
+
+# ── Storage ─────────────────────────────────────────────────────
+redis
+motor                      # Phase 2: MongoDB async driver
+
+# ── Auth (Phase 2) ──────────────────────────────────────────────
+python-jose[cryptography]  # JWT encode/decode
+passlib[bcrypt]            # Password hashing
+bcrypt==4.0.1              # Pin: newer bcrypt breaks passlib on Python 3.11
+
+# ── Phase 3 (DocVault Pipeline) ───────────────────────────────
+paddleocr==3.0.3
+paddlepaddle==3.0.0
+pdf2image==1.17.0
+Pillow>=10.0.0
+python-magic==0.4.27
+
+python-magic-bin==0.4.14     # Use -bin on Windows to avoid libmagic dll errors
+rapidfuzz==3.6.1             # Fast Levenshtein distance for cross-validation
+cryptography                 # AES-256 encryption
+
+# ── Phase 4 (uncomment when ready) ─────────────────────────────
+# python-telegram-bot
+# slowapi                   # Rate limiting
+
+# ── Mock Portal ──────────────────────────────────────────────────
+Flask
