@@ -178,24 +178,36 @@ def get_label_for_element(element: Tag, soup: BeautifulSoup) -> str:
         if ref_elem:
             return normalize_label(ref_elem.get_text())
     
-    # 5. Try previous label sibling
+    # 5. Try Google Forms / ARIA question container heading or .M7eMe
+    container = element.find_parent(attrs={"role": "listitem"}) or element.find_parent(class_=re.compile(r"(geFormPage|QrShBc|freebirdFormviewerViewItemsItemItem)", re.I))
+    if container:
+        heading = container.find(attrs={"role": "heading"}) or container.find(class_=re.compile(r"M7eMe", re.I))
+        if heading:
+            txt = heading.get_text(strip=True)
+            if txt:
+                return normalize_label(txt)
+        c_aria = container.get("aria-label", "")
+        if c_aria:
+            return normalize_label(c_aria)
+
+    # 6. Try previous label sibling
     prev_label = element.find_previous_sibling("label")
     if prev_label:
         return normalize_label(prev_label.get_text())
     
-    # 6. Try preceding sibling text node
+    # 7. Try preceding sibling text node
     prev = element.find_previous_sibling(string=True)
     if prev and prev.strip():
         return normalize_label(prev.strip())
     
-    # 7. Try fieldset legend (for radio groups)
+    # 8. Try fieldset legend (for radio groups)
     fieldset = element.find_parent("fieldset")
     if fieldset:
         legend = fieldset.find("legend")
         if legend:
             return normalize_label(legend.get_text())
     
-    # 8. Try nearby span/div text
+    # 9. Try nearby span/div text
     for tag in ['span', 'div', 'p']:
         prev_elem = element.find_previous_sibling(tag)
         if prev_elem:
@@ -203,18 +215,271 @@ def get_label_for_element(element: Tag, soup: BeautifulSoup) -> str:
             if text and len(text) < 50:
                 return normalize_label(text)
     
-    # 9. Fallback to placeholder
+    # 10. Fallback to placeholder
     placeholder = element.get("placeholder", "")
     if placeholder:
         return normalize_label(placeholder)
     
-    # 10. Fallback to name
+    # 11. Fallback to name
     name = element.get("name", "")
     if name:
         return normalize_label(name)
     
-    # 11. Final fallback
+    # 12. Final fallback
     return "Unnamed Field"
+
+
+def extract_aria_and_google_forms_fields(soup: BeautifulSoup, target_form: Tag) -> list:
+    """Extract fields from Google Forms and ARIA-based form structures."""
+    import uuid
+    fields = []
+    seen_keys = set()
+
+    # Find question containers or listitems
+    containers = target_form.find_all(attrs={"role": "listitem"})
+    if not containers:
+        containers = target_form.find_all(class_=re.compile(r"(geFormPage|QrShBc|freebirdFormviewerViewItemsItemItem)", re.I))
+
+    # Fallback: if no listitem containers, check if target_form itself has form controls
+    if not containers:
+        containers = [target_form]
+
+    for container in containers:
+        # Extract label / question text
+        heading = (
+            container.find(attrs={"role": "heading"}) or
+            container.find(class_=re.compile(r"M7eMe", re.I)) or
+            container.find(class_=re.compile(r"(title|question-title|label)", re.I))
+        )
+        label_text = ""
+        if heading:
+            label_text = normalize_label(heading.get_text())
+        if not label_text:
+            label_text = normalize_label(container.get("aria-label", ""))
+
+        # Find hidden entry inputs associated with this question container
+        entry_inputs = container.find_all("input", attrs={"name": re.compile(r"^entry\.", re.I)})
+        entry_names = [inp.get("name") for inp in entry_inputs if inp.get("name")]
+
+        # Determine required status
+        required = (
+            "*" in container.get_text() or
+            container.find(attrs={"aria-required": "true"}) is not None or
+            container.find(class_=re.compile(r"required", re.I)) is not None
+        )
+
+        # 1. Radio Group Check
+        radio_group = container.find(attrs={"role": "radiogroup"})
+        radio_elems = container.find_all(attrs={"role": "radio"})
+        if radio_group or radio_elems:
+            radios = radio_elems or (radio_group.find_all(attrs={"role": "radio"}) if radio_group else [])
+            options = []
+            for r in radios:
+                opt_val = r.get("data-value") or r.get_text(strip=True)
+                opt_lbl = r.get("aria-label") or r.get_text(strip=True) or opt_val
+                if opt_val or opt_lbl:
+                    options.append({"value": opt_val or opt_lbl, "label": normalize_label(opt_lbl or opt_val)})
+
+            name = entry_names[0] if entry_names else ""
+            dedup_key = name or label_text or f"radio_group_{len(fields)}"
+            if dedup_key not in seen_keys and label_text:
+                seen_keys.add(dedup_key)
+                primary_selector = f"[name='{name}']" if name else "[role='radiogroup']"
+                selector_priority = []
+                if label_text:
+                    selector_priority.append(f"getByLabel('{label_text}')")
+                if name:
+                    selector_priority.append(f"[name='{name}']")
+                selector_priority.append("[role='radiogroup']")
+
+                fields.append({
+                    "field_id": str(uuid.uuid4()),
+                    "label": label_text,
+                    "field_type": "radio",
+                    "name": name,
+                    "id_attr": "",
+                    "placeholder": "",
+                    "required": required,
+                    "options": options,
+                    "selector": primary_selector,
+                    "selector_priority": selector_priority,
+                    "section": get_section_name(container),
+                    "accept": None,
+                    "multiple": False,
+                    "order": len(fields)
+                })
+                continue
+
+        # 2. Checkbox Group Check
+        checkbox_elems = container.find_all(attrs={"role": "checkbox"})
+        if checkbox_elems:
+            options = []
+            for c in checkbox_elems:
+                opt_val = c.get("data-value") or c.get_text(strip=True)
+                opt_lbl = c.get("aria-label") or c.get_text(strip=True) or opt_val
+                if opt_val or opt_lbl:
+                    options.append({"value": opt_val or opt_lbl, "label": normalize_label(opt_lbl or opt_val)})
+
+            name = entry_names[0] if entry_names else ""
+            dedup_key = name or label_text or f"checkbox_group_{len(fields)}"
+            if dedup_key not in seen_keys and label_text:
+                seen_keys.add(dedup_key)
+                primary_selector = f"[name='{name}']" if name else "[role='checkbox']"
+                selector_priority = []
+                if label_text:
+                    selector_priority.append(f"getByLabel('{label_text}')")
+                if name:
+                    selector_priority.append(f"[name='{name}']")
+                selector_priority.append("[role='checkbox']")
+
+                fields.append({
+                    "field_id": str(uuid.uuid4()),
+                    "label": label_text,
+                    "field_type": "checkbox",
+                    "name": name,
+                    "id_attr": "",
+                    "placeholder": "",
+                    "required": required,
+                    "options": options,
+                    "selector": primary_selector,
+                    "selector_priority": selector_priority,
+                    "section": get_section_name(container),
+                    "accept": None,
+                    "multiple": True,
+                    "order": len(fields)
+                })
+                continue
+
+        # 3. Dropdown / Listbox Check
+        listbox = container.find(attrs={"role": "listbox"})
+        if listbox:
+            opt_elems = listbox.find_all(attrs={"role": "option"})
+            options = []
+            for o in opt_elems:
+                opt_val = o.get("data-value") or o.get_text(strip=True)
+                opt_lbl = o.get_text(strip=True) or opt_val
+                if opt_val or opt_lbl:
+                    options.append({"value": opt_val or opt_lbl, "label": normalize_label(opt_lbl or opt_val)})
+
+            name = entry_names[0] if entry_names else ""
+            dedup_key = name or label_text or f"listbox_{len(fields)}"
+            if dedup_key not in seen_keys and label_text:
+                seen_keys.add(dedup_key)
+                primary_selector = f"[name='{name}']" if name else "[role='listbox']"
+                selector_priority = []
+                if label_text:
+                    selector_priority.append(f"getByLabel('{label_text}')")
+                if name:
+                    selector_priority.append(f"[name='{name}']")
+                selector_priority.append("[role='listbox']")
+
+                fields.append({
+                    "field_id": str(uuid.uuid4()),
+                    "label": label_text,
+                    "field_type": "select",
+                    "name": name,
+                    "id_attr": "",
+                    "placeholder": "",
+                    "required": required,
+                    "options": options,
+                    "selector": primary_selector,
+                    "selector_priority": selector_priority,
+                    "section": get_section_name(container),
+                    "accept": None,
+                    "multiple": False,
+                    "order": len(fields)
+                })
+                continue
+
+        # 4. Text / Textarea Check
+        textarea = container.find("textarea") or container.find(class_=re.compile(r"KHwjSy|SPErbc", re.I))
+        if textarea:
+            name = textarea.get("name") or (entry_names[0] if entry_names else "")
+            jsname = textarea.get("jsname", "")
+            elem_id = textarea.get("id", "")
+            dedup_key = name or elem_id or label_text or f"textarea_{len(fields)}"
+            if dedup_key not in seen_keys and label_text:
+                seen_keys.add(dedup_key)
+                primary_selector = f"#{elem_id}" if elem_id else (f"[name='{name}']" if name else ("textarea[jsname]" if jsname else "textarea"))
+                selector_priority = []
+                if label_text:
+                    selector_priority.append(f"getByLabel('{label_text}')")
+                if name:
+                    selector_priority.append(f"[name='{name}']")
+                if jsname:
+                    selector_priority.append(f"[jsname='{jsname}']")
+
+                fields.append({
+                    "field_id": str(uuid.uuid4()),
+                    "label": label_text,
+                    "field_type": "textarea",
+                    "name": name,
+                    "id_attr": elem_id,
+                    "placeholder": textarea.get("placeholder", ""),
+                    "required": required,
+                    "options": [],
+                    "selector": primary_selector,
+                    "selector_priority": selector_priority,
+                    "section": get_section_name(container),
+                    "accept": None,
+                    "multiple": False,
+                    "order": len(fields)
+                })
+                continue
+
+        text_input = (
+            container.find("input", attrs={"type": re.compile(r"^(text|email|tel|number)$", re.I)}) or
+            container.find("input", attrs={"jsname": True}) or
+            container.find(class_=re.compile(r"whsOnd|zWSnvd", re.I)) or
+            container.find(attrs={"contenteditable": "true"})
+        )
+        if text_input or entry_names:
+            name = ""
+            elem_id = ""
+            jsname = ""
+            placeholder = ""
+            if text_input:
+                name = text_input.get("name", "")
+                elem_id = text_input.get("id", "")
+                jsname = text_input.get("jsname", "")
+                placeholder = text_input.get("placeholder", "")
+
+            if not name and entry_names:
+                name = entry_names[0]
+
+            dedup_key = name or elem_id or label_text or f"text_{len(fields)}"
+            if dedup_key not in seen_keys and label_text:
+                seen_keys.add(dedup_key)
+                primary_selector = f"#{elem_id}" if elem_id else (f"[name='{name}']" if name else (f"[jsname='{jsname}']" if jsname else "input[type='text']"))
+                selector_priority = []
+                if label_text:
+                    selector_priority.append(f"getByLabel('{label_text}')")
+                if name:
+                    selector_priority.append(f"[name='{name}']")
+                if jsname:
+                    selector_priority.append(f"[jsname='{jsname}']")
+
+                fields.append({
+                    "field_id": str(uuid.uuid4()),
+                    "label": label_text,
+                    "field_type": "text",
+                    "name": name,
+                    "id_attr": elem_id,
+                    "placeholder": placeholder,
+                    "required": required,
+                    "options": [],
+                    "selector": primary_selector,
+                    "selector_priority": selector_priority,
+                    "section": get_section_name(container),
+                    "accept": None,
+                    "multiple": False,
+                    "order": len(fields)
+                })
+                continue
+
+
+    return fields
+
 
 
 def generate_selector(element: Tag, form: Tag) -> str:
@@ -426,9 +691,18 @@ async def scraper(html: str, url: str) -> Optional[dict]:
             name = element.get("name", "")
             elem_id = element.get("id", "")
             
+            # Fallback to container entry.XXXXXXXX input name for Google Forms inputs
+            if not name or not name.startswith("entry."):
+                container = element.find_parent(attrs={"role": "listitem"}) or element.find_parent(class_=re.compile(r"(geFormPage|QrShBc|freebirdFormviewerViewItemsItemItem)", re.I))
+                if container:
+                    entry_inp = container.find("input", attrs={"name": re.compile(r"^entry\.", re.I)})
+                    if entry_inp and entry_inp.get("name"):
+                        name = entry_inp.get("name")
+
             # Skip security/spam fields
             if is_security_field(name, elem_id):
                 continue
+
             
             placeholder = element.get("placeholder", "")
             required = element.has_attr("required") or element.get("required") == "required"
@@ -501,6 +775,23 @@ async def scraper(html: str, url: str) -> Optional[dict]:
                 "order": len(fields)  # Preserve order
             })
         
+        # Also extract fields from Google Forms / ARIA controls if standard fields are incomplete or 0
+        aria_fields = extract_aria_and_google_forms_fields(soup, target_form)
+        if aria_fields:
+            existing_labels = {f["label"].lower() for f in fields if f.get("label")}
+            existing_names = {f["name"] for f in fields if f.get("name")}
+            for af in aria_fields:
+                a_name = af.get("name")
+                a_label = af.get("label", "").lower()
+                if (a_name and a_name in existing_names) or (a_label and a_label in existing_labels):
+                    continue
+                af["order"] = len(fields)
+                fields.append(af)
+                if a_name:
+                    existing_names.add(a_name)
+                if a_label:
+                    existing_labels.add(a_label)
+
         if not fields:
             print("[Scraper] ✗ Found form tag but extracted 0 fields")
             # Return structured warning instead of None
@@ -516,6 +807,7 @@ async def scraper(html: str, url: str) -> Optional[dict]:
                 "scraped_at": datetime.now().isoformat(),
                 "scrape_warning": "No fillable user fields found"
             }
+
         
         # Find submit button
         submit_button = (

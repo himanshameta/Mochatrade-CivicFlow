@@ -47,14 +47,19 @@ def _run_scout_sync(url: str, screenshot_dir: str) -> dict:
             
             title = page.title()
             
-            # Check for forms
+            # Check for forms or form-like elements
             forms = page.query_selector_all("form")
             if not forms:
-                # Also check for inputs outside forms
-                inputs = page.query_selector_all("input, select, textarea")
+                # Also check for inputs or ARIA form controls outside forms
+                inputs = page.query_selector_all(
+                    "input, select, textarea, [role='listitem'], [role='radiogroup'], "
+                    "[role='radio'], [role='checkbox'], [role='listbox'], "
+                    "input[name^='entry.'], input[jsname], textarea[jsname], [contenteditable='true']"
+                )
                 if not inputs:
                     browser.close()
                     return {"error": "No form found on this page. Make sure the URL points directly to a form.", "html": html, "title": title, "screenshot_path": "", "url": url}
+
             
             # Take screenshot
             os.makedirs(screenshot_dir, exist_ok=True)
