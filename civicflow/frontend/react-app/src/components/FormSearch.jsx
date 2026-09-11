@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import axios from 'axios'
+import { ArrowRight } from 'lucide-react'
 
 // Debug mode: only show debug info in dev or with ?debug=1
 const SHOW_DEBUG = import.meta.env.DEV || new URLSearchParams(window.location.search).get('debug') === '1'
