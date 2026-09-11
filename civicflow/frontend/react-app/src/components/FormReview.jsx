@@ -104,7 +104,6 @@ const FormReview = ({ showToast }) => {
       console.log('[ConfirmData] status:', data.status, 'ready:', data.ready_for_execution)
       console.log('[ConfirmData] summary:', JSON.stringify(data.summary))
 
-      // Build fields list
       let fields = []
       if (data.canonical_fields || data.editable_fields) {
         fields = [...(data.canonical_fields || []), ...(data.editable_fields || [])]
@@ -157,7 +156,7 @@ const FormReview = ({ showToast }) => {
     }
   }
 
-  // ── Inline field update (POST /confirm-data) ──
+  // ── Inline field update ──
   const handleInlineUpdate = async (fieldValues, persistFlags = {}) => {
     setSavingInline(true)
     try {
@@ -170,8 +169,6 @@ const FormReview = ({ showToast }) => {
 
       setMissingFields(result.missing_required_fields || [])
       showToast(result.message || 'Fields updated', 'success')
-
-      // Re-fetch full confirm data to refresh the UI
       await fetchConfirmData()
     } catch (error) {
       console.error('[InlineUpdate] Error:', error)
@@ -239,11 +236,11 @@ const FormReview = ({ showToast }) => {
     return (
       <div className="view active">
         <div className="page-container">
-          <div className="glass-card" style={{ textAlign: 'center', borderColor: '#f87171' }}>
-            <h2 style={{ color: '#ef4444' }}>Pipeline Failed</h2>
-            <p style={{ marginTop: '1rem', color: '#f87171' }}>{errorMessage}</p>
-            <div style={{ marginTop: '2rem', display: 'flex', justifyContent: 'center', gap: '1rem' }}>
-              <button className="btn btn-outline" onClick={() => navigate('/dashboard')}>Back to Dashboard</button>
+          <div className="glass-card exec-error-panel" style={{ textAlign: 'center' }}>
+            <h2 className="exec-status-heading state-failed">Pipeline Failed</h2>
+            <p style={{ marginTop: '1rem', marginBottom: '2rem' }}>{errorMessage}</p>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem' }}>
+              <button className="btn btn-outline" onClick={() => navigate('/dashboard')}>← Back to Dashboard</button>
               <button className="btn btn-primary" onClick={handleRetry}>Retry Analysis</button>
             </div>
           </div>
@@ -256,7 +253,7 @@ const FormReview = ({ showToast }) => {
     return (
       <div className="loading-overlay">
         <div className="spinner"></div>
-        <p>Analyzing form... Status: {sessionStatus || 'processing'}</p>
+        <p className="loading-text">Analyzing form — status: {sessionStatus || 'processing'}</p>
       </div>
     )
   }
@@ -265,9 +262,9 @@ const FormReview = ({ showToast }) => {
     return (
       <div className="view active">
         <div className="page-container">
-          <div className="glass-card" style={{ borderColor: '#f59e0b' }}>
-            <h2 style={{ color: '#f59e0b' }}>⚠ Debug: Unexpected Response</h2>
-            <pre style={{ background: '#1e1e1e', color: '#d4d4d4', padding: '1rem', borderRadius: '8px', overflow: 'auto', maxHeight: '400px', fontSize: '0.8rem' }}>
+          <div className="glass-card review-warning-panel" style={{ borderColor: 'rgba(252,211,77,0.3)' }}>
+            <h2 style={{ color: 'var(--warning)' }}>⚠ Debug: Unexpected Response</h2>
+            <pre style={{ background: 'var(--surface-alt)', color: 'var(--text-secondary)', padding: '1rem', borderRadius: 'var(--radius-sm)', overflow: 'auto', maxHeight: '400px', fontSize: '0.78rem', fontFamily: 'var(--font-mono)', marginTop: '1rem' }}>
               {JSON.stringify(debugPayload, null, 2)}
             </pre>
             <div style={{ marginTop: '1rem', display: 'flex', gap: '1rem' }}>
@@ -286,8 +283,8 @@ const FormReview = ({ showToast }) => {
         <div className="page-container">
           <div className="glass-card">
             <h2>Loading Form...</h2>
-            <p>Please wait while we prepare the form for review.</p>
-            <button className="btn btn-primary" onClick={fetchConfirmData} style={{ marginTop: '1rem' }}>Retry Load</button>
+            <p style={{ marginTop: '0.5rem', color: 'var(--text-secondary)' }}>Please wait while we prepare the form for review.</p>
+            <button className="btn btn-primary" onClick={fetchConfirmData} style={{ marginTop: '1.5rem' }}>Retry Load</button>
           </div>
         </div>
       </div>
@@ -300,78 +297,96 @@ const FormReview = ({ showToast }) => {
         <div className="form-review-main">
           <div className="page-hero">
             <h2>Review Before Filing</h2>
-            <p>{confirmData.page_title || confirmData.url}</p>
+            <p className="font-mono" style={{ fontSize: '0.82rem' }}>{confirmData.page_title || confirmData.url}</p>
           </div>
 
-          {/* Summary bar */}
+          {/* ── Summary stats ── */}
           {summary && (
-            <div style={{
-              display: 'flex', gap: '1rem', marginBottom: '1rem', flexWrap: 'wrap'
-            }}>
-              <div style={{ flex: 1, minWidth: '120px', background: '#d1fae5', border: '1px solid #6ee7b7', borderRadius: '8px', padding: '0.75rem 1rem', textAlign: 'center' }}>
-                <div style={{ fontSize: '1.5rem', fontWeight: 700, color: '#065f46' }}>{summary.prefilled_count}</div>
-                <div style={{ fontSize: '0.8rem', color: '#047857' }}>Pre-filled</div>
+            <div className="review-stats-row">
+              <div className="review-stat-card stat-prefilled">
+                <div className="review-stat-number">{summary.prefilled_count}</div>
+                <div className="review-stat-label">Pre-filled</div>
               </div>
-              <div style={{ flex: 1, minWidth: '120px', background: summary.missing_required_count > 0 ? '#fef2f2' : '#d1fae5', border: `1px solid ${summary.missing_required_count > 0 ? '#fecaca' : '#6ee7b7'}`, borderRadius: '8px', padding: '0.75rem 1rem', textAlign: 'center' }}>
-                <div style={{ fontSize: '1.5rem', fontWeight: 700, color: summary.missing_required_count > 0 ? '#dc2626' : '#065f46' }}>{summary.missing_required_count}</div>
-                <div style={{ fontSize: '0.8rem', color: summary.missing_required_count > 0 ? '#991b1b' : '#047857' }}>Missing Required</div>
+              <div className={`review-stat-card stat-missing${summary.missing_required_count > 0 ? '' : ' stat-prefilled'}`}>
+                <div className="review-stat-number">{summary.missing_required_count}</div>
+                <div className="review-stat-label">Missing Required</div>
               </div>
-              <div style={{ flex: 1, minWidth: '120px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', padding: '0.75rem 1rem', textAlign: 'center' }}>
-                <div style={{ fontSize: '1.5rem', fontWeight: 700, color: '#1e40af' }}>{summary.optional_unfilled_count || 0}</div>
-                <div style={{ fontSize: '0.8rem', color: '#1d4ed8' }}>Optional</div>
+              <div className="review-stat-card stat-optional">
+                <div className="review-stat-number">{summary.optional_unfilled_count || 0}</div>
+                <div className="review-stat-label">Optional</div>
               </div>
-              <div style={{ flex: 1, minWidth: '120px', background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '8px', padding: '0.75rem 1rem', textAlign: 'center' }}>
-                <div style={{ fontSize: '1.5rem', fontWeight: 700, color: '#374151' }}>{summary.total_fields}</div>
-                <div style={{ fontSize: '0.8rem', color: '#6b7280' }}>Total Fields</div>
+              <div className="review-stat-card stat-total">
+                <div className="review-stat-number">{summary.total_fields}</div>
+                <div className="review-stat-label">Total Fields</div>
               </div>
             </div>
           )}
 
-          {/* Warnings */}
+          {/* ── Warnings ── */}
           {warnings.length > 0 && (
-            <div style={{ background: '#fffbeb', border: '1px solid #fde68a', padding: '1rem', borderRadius: '8px', marginBottom: '1rem' }}>
-              <h4 style={{ color: '#d97706', margin: '0 0 0.5rem 0' }}>⚠ {warnings.length} Warning{warnings.length > 1 ? 's' : ''}</h4>
-              <ul style={{ margin: 0, paddingLeft: '1.5rem', color: '#92400e', fontSize: '0.9rem' }}>
+            <div className="review-warning-panel">
+              <h4>⚠ {warnings.length} Warning{warnings.length > 1 ? 's' : ''}</h4>
+              <ul>
                 {warnings.map((w, i) => <li key={i}>{w}</li>)}
               </ul>
             </div>
           )}
 
-          {/* File requirements — interactive */}
+          {/* ── File requirements ── */}
           {fileRequirements.length > 0 && (
-            <div style={{ background: '#f0f9ff', border: '1px solid #bfdbfe', padding: '1rem', borderRadius: '8px', marginBottom: '1rem' }}>
-              <h4 style={{ color: '#1d4ed8', margin: '0 0 0.75rem 0' }}>📎 File Uploads ({fileRequirements.length})</h4>
+            <div className="file-req-panel">
+              <div className="file-req-panel-header">
+                <span>📎</span>
+                <h4>File Uploads ({fileRequirements.length})</h4>
+              </div>
+
               {fileRequirements.map((fr, i) => {
                 const sel = selectedDocs[fr.key]
                 return (
-                  <div key={i} style={{ padding: '0.75rem', marginBottom: '0.5rem', borderRadius: '8px', border: sel ? '1px solid #6ee7b7' : fr.required ? '1px solid #fecaca' : '1px solid #e2e8f0', background: sel ? 'rgba(16,185,129,0.06)' : 'transparent' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                      <span style={{ fontWeight: 600 }}>
+                  <div
+                    key={i}
+                    className={`file-req-item${sel ? ' is-selected' : ''}${fr.required && !sel ? ' is-required' : ''}`}
+                  >
+                    <div className="file-req-item-header">
+                      <span className="file-req-name">
                         {fr.label}
-                        {fr.required && <span style={{ color: '#ef4444', marginLeft: '0.25rem' }}>*</span>}
-                        {fr.accept && <span style={{ color: '#6b7280', fontSize: '0.8rem', marginLeft: '0.5rem' }}>({fr.accept})</span>}
+                        {fr.required && <span className="field-required-tag"> *</span>}
+                        {fr.accept && <span className="file-req-accept">({fr.accept})</span>}
                       </span>
                       {sel ? (
-                        <span style={{ padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600, background: '#d1fae5', color: '#065f46' }}>✓ Selected</span>
+                        <span className="badge badge-prefilled">✓ Selected</span>
                       ) : fr.required ? (
-                        <span style={{ padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600, background: '#fee2e2', color: '#991b1b' }}>Required</span>
+                        <span className="badge badge-missing">Required</span>
                       ) : (
-                        <span style={{ padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600, background: '#e2e3e5', color: '#6c757d' }}>Optional</span>
+                        <span className="badge badge-optional">Optional</span>
                       )}
                     </div>
 
                     {sel ? (
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontSize: '0.85rem', color: '#047857' }}>📄 {sel.display_name || sel.document_id}</span>
-                        <button className="btn btn-sm btn-outline" onClick={() => setSelectedDocs(prev => { const n = { ...prev }; delete n[fr.key]; return n })}>Change</button>
+                      <div className="file-req-selected-info">
+                        <span className="file-req-selected-name">
+                          📄 {sel.display_name || sel.document_id}
+                        </span>
+                        <button
+                          className="btn btn-sm btn-outline"
+                          onClick={() => setSelectedDocs(prev => { const n = { ...prev }; delete n[fr.key]; return n })}
+                        >
+                          Change
+                        </button>
                       </div>
                     ) : (
-                      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                      <div className="file-req-actions">
                         <button className="btn btn-sm btn-outline" onClick={() => setActiveModal({ type: 'picker', field: fr })}>
                           📂 Choose from My Documents
-                          {(fr.matched_saved_documents || []).length > 0 && <span style={{ marginLeft: '0.25rem', color: '#10b981' }}>({fr.matched_saved_documents.length} match{fr.matched_saved_documents.length > 1 ? 'es' : ''})</span>}
+                          {(fr.matched_saved_documents || []).length > 0 && (
+                            <span style={{ marginLeft: '0.35rem', color: 'var(--success)', fontSize: '0.75rem' }}>
+                              ({fr.matched_saved_documents.length} match{fr.matched_saved_documents.length > 1 ? 'es' : ''})
+                            </span>
+                          )}
                         </button>
-                        <button className="btn btn-sm btn-primary" onClick={() => setActiveModal({ type: 'upload', field: fr })}>📤 Upload New</button>
+                        <button className="btn btn-sm btn-primary" onClick={() => setActiveModal({ type: 'upload', field: fr })}>
+                          📤 Upload New
+                        </button>
                       </div>
                     )}
                   </div>
@@ -380,7 +395,7 @@ const FormReview = ({ showToast }) => {
             </div>
           )}
 
-          {/* File modals */}
+          {/* ── File modals ── */}
           {activeModal?.type === 'upload' && (
             <FileUploadModal
               sessionId={sessionId}
@@ -411,7 +426,7 @@ const FormReview = ({ showToast }) => {
             />
           )}
 
-          {/* Form fields */}
+          {/* ── Form fields ── */}
           <div className="glass-card">
             <DynamicReviewForm
               fields={confirmData.fields}
@@ -426,8 +441,10 @@ const FormReview = ({ showToast }) => {
               readyForExecution={confirmData.ready_for_execution}
             />
 
-            <div className="review-actions" style={{ marginTop: '1rem', display: 'flex', justifyContent: 'flex-start' }}>
-              <button type="button" className="btn btn-outline" onClick={() => navigate('/dashboard')} disabled={submitting}>← Cancel</button>
+            <div className="review-actions" style={{ marginTop: '1rem', justifyContent: 'flex-start' }}>
+              <button type="button" className="btn btn-outline" onClick={() => navigate('/dashboard')} disabled={submitting}>
+                ← Cancel
+              </button>
             </div>
           </div>
         </div>

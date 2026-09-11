@@ -14,7 +14,6 @@ const Login = ({ onLogin, showToast }) => {
   const handleLogin = async (e) => {
     e.preventDefault()
     setLoading(true)
-
     try {
       const response = await axios.post('/auth/login', loginData)
       onLogin(response.data.data.user, response.data.data.access_token)
@@ -30,7 +29,6 @@ const Login = ({ onLogin, showToast }) => {
   const handleRegister = async (e) => {
     e.preventDefault()
     setLoading(true)
-
     try {
       const response = await axios.post('/auth/register', registerData)
       onLogin(response.data.data.user, response.data.data.access_token)
@@ -46,38 +44,68 @@ const Login = ({ onLogin, showToast }) => {
   return (
     <div className="view active" id="view-login">
       <div className="auth-layout">
+
+        {/* ── Brand panel ── */}
         <div className="auth-brand">
           <div className="brand-logo">
-            <svg width="48" height="48" viewBox="0 0 32 32" fill="none">
-              <rect width="32" height="32" rx="8" fill="url(#logoGrad2)"/>
-              <path d="M8 16L14 22L24 10" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
+            {/* Logo — orange-accented checkmark icon */}
+            <svg width="52" height="52" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+              <rect width="32" height="32" rx="8" fill="url(#loginLogoGrad)"/>
+              <path d="M8 16L14 22L24 10" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
               <defs>
-                <linearGradient id="logoGrad2" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
-                  <stop stopColor="#86b89a"/>
-                  <stop offset="1" stopColor="#4a8a64"/>
+                <linearGradient id="loginLogoGrad" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
+                  <stop stopColor="#F7931A"/>
+                  <stop offset="1" stopColor="#EA580C"/>
                 </linearGradient>
               </defs>
             </svg>
             <h1>CivicFlow</h1>
           </div>
-          <p className="brand-tagline">AI-powered form filling for any website</p>
+          <p className="brand-tagline">AI-powered form automation for any website</p>
+
           <div className="brand-features">
-            <div className="brand-feature"><span>🤖</span> Sahayak guides you step by step</div>
-            <div className="brand-feature"><span>📄</span> Auto-extract from your documents</div>
-            <div className="brand-feature"><span>🔒</span> AES-256 encrypted, zero-trust storage</div>
-            <div className="brand-feature"><span>🌐</span> Works with any form on any website</div>
+            <div className="brand-feature">
+              <div className="feature-icon" aria-hidden="true">🤖</div>
+              <span>Sahayak AI guides you step by step</span>
+            </div>
+            <div className="brand-feature">
+              <div className="feature-icon" aria-hidden="true">📄</div>
+              <span>Auto-extract data from your documents</span>
+            </div>
+            <div className="brand-feature">
+              <div className="feature-icon" aria-hidden="true">🔒</div>
+              <span>AES-256 encrypted, zero-trust storage</span>
+            </div>
+            <div className="brand-feature">
+              <div className="feature-icon" aria-hidden="true">🌐</div>
+              <span>Works with any form on any website</span>
+            </div>
           </div>
         </div>
 
-        <div className="auth-form-card glass-card">
-          <div className="auth-tabs">
-            <button 
+        {/* ── Auth form card ── */}
+        <div className="auth-form-card">
+          <div className="auth-form-title">
+            {activeTab === 'login' ? 'Sign in to CivicFlow' : 'Create your account'}
+          </div>
+          <div className="auth-form-subtitle">
+            {activeTab === 'login'
+              ? 'Welcome back. Enter your credentials to continue.'
+              : 'Join CivicFlow and start automating your forms.'}
+          </div>
+
+          <div className="auth-tabs" role="tablist">
+            <button
+              role="tab"
+              aria-selected={activeTab === 'login'}
               className={`auth-tab ${activeTab === 'login' ? 'active' : ''}`}
               onClick={() => setActiveTab('login')}
             >
               Sign In
             </button>
-            <button 
+            <button
+              role="tab"
+              aria-selected={activeTab === 'register'}
               className={`auth-tab ${activeTab === 'register' ? 'active' : ''}`}
               onClick={() => setActiveTab('register')}
             >
@@ -86,15 +114,16 @@ const Login = ({ onLogin, showToast }) => {
           </div>
 
           {activeTab === 'login' ? (
-            <form onSubmit={handleLogin}>
+            <form onSubmit={handleLogin} noValidate>
               <div className="form-group">
                 <label htmlFor="loginEmail">Email Address</label>
                 <input
                   type="email"
                   id="loginEmail"
                   value={loginData.email}
-                  onChange={(e) => setLoginData({...loginData, email: e.target.value})}
+                  onChange={(e) => setLoginData({ ...loginData, email: e.target.value })}
                   placeholder="you@example.com"
+                  autoComplete="email"
                   required
                 />
               </div>
@@ -104,25 +133,27 @@ const Login = ({ onLogin, showToast }) => {
                   type="password"
                   id="loginPassword"
                   value={loginData.password}
-                  onChange={(e) => setLoginData({...loginData, password: e.target.value})}
+                  onChange={(e) => setLoginData({ ...loginData, password: e.target.value })}
                   placeholder="••••••••"
+                  autoComplete="current-password"
                   required
                 />
               </div>
               <button type="submit" className="btn btn-primary btn-full" disabled={loading}>
-                {loading ? 'Signing in...' : 'Sign In'}
+                {loading ? <><span className="btn-loader"></span> Signing in...</> : 'Sign In →'}
               </button>
             </form>
           ) : (
-            <form onSubmit={handleRegister}>
+            <form onSubmit={handleRegister} noValidate>
               <div className="form-group">
                 <label htmlFor="regName">Full Name</label>
                 <input
                   type="text"
                   id="regName"
                   value={registerData.name}
-                  onChange={(e) => setRegisterData({...registerData, name: e.target.value})}
+                  onChange={(e) => setRegisterData({ ...registerData, name: e.target.value })}
                   placeholder="Your full name"
+                  autoComplete="name"
                   required
                 />
               </div>
@@ -132,8 +163,9 @@ const Login = ({ onLogin, showToast }) => {
                   type="email"
                   id="regEmail"
                   value={registerData.email}
-                  onChange={(e) => setRegisterData({...registerData, email: e.target.value})}
+                  onChange={(e) => setRegisterData({ ...registerData, email: e.target.value })}
                   placeholder="you@example.com"
+                  autoComplete="email"
                   required
                 />
               </div>
@@ -143,8 +175,9 @@ const Login = ({ onLogin, showToast }) => {
                   type="tel"
                   id="regPhone"
                   value={registerData.phone}
-                  onChange={(e) => setRegisterData({...registerData, phone: e.target.value})}
+                  onChange={(e) => setRegisterData({ ...registerData, phone: e.target.value })}
                   placeholder="10-digit number"
+                  autoComplete="tel"
                   required
                 />
               </div>
@@ -154,32 +187,35 @@ const Login = ({ onLogin, showToast }) => {
                   type="password"
                   id="regPassword"
                   value={registerData.password}
-                  onChange={(e) => setRegisterData({...registerData, password: e.target.value})}
+                  onChange={(e) => setRegisterData({ ...registerData, password: e.target.value })}
                   placeholder="Min 8 characters"
+                  autoComplete="new-password"
                   required
                 />
               </div>
               <div className="form-group">
                 <label>Account Type</label>
-                <div className="role-toggle">
+                <div className="role-toggle" role="group" aria-label="Account type">
                   <button
                     type="button"
                     className={`role-btn ${registerData.role === 'primary' ? 'active' : ''}`}
-                    onClick={() => setRegisterData({...registerData, role: 'primary'})}
+                    onClick={() => setRegisterData({ ...registerData, role: 'primary' })}
+                    aria-pressed={registerData.role === 'primary'}
                   >
                     Primary Account
                   </button>
                   <button
                     type="button"
                     className={`role-btn ${registerData.role === 'relative' ? 'active' : ''}`}
-                    onClick={() => setRegisterData({...registerData, role: 'relative'})}
+                    onClick={() => setRegisterData({ ...registerData, role: 'relative' })}
+                    aria-pressed={registerData.role === 'relative'}
                   >
                     Relative Account
                   </button>
                 </div>
               </div>
               <button type="submit" className="btn btn-primary btn-full" disabled={loading}>
-                {loading ? 'Creating...' : 'Create Account'}
+                {loading ? <><span className="btn-loader"></span> Creating...</> : 'Create Account →'}
               </button>
             </form>
           )}

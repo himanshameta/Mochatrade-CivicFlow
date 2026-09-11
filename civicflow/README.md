@@ -1,31 +1,73 @@
-# CivicFlow
-
-> AI-powered government form filling for Indian citizens. Upload your Aadhaar, PAN, or Passport — let Sahayak guide you through any government portal automatically.
+<div align="center">
+  <img src="https://raw.githubusercontent.com/team-tensors/civicflow/main/assets/logo.png" alt="CivicFlow Logo" width="120" onerror="this.style.display='none'">
+  <h1>CivicFlow</h1>
+  <p><strong>Private AI-Assisted Form Automation</strong></p>
+  <p><em>Built by <b>Team Tensors</b> for the <b>Faraway Hackathon 2026</b></em></p>
+</div>
 
 ---
 
-## Architecture
+## 🚀 The Vision
+
+Government and institutional portals are notoriously complex, repetitive, and frustrating to navigate. Citizens spend countless hours repeatedly typing the same information and uploading the same documents across different platforms.
+
+**CivicFlow** is a privacy-first, intelligent automation platform that acts as your personal digital assistant. You securely store your core identity documents and profile once. When you need to fill a form, CivicFlow's AI agents navigate the portal, extract what's needed, map your data to the form, ask for your final review, and execute the submission on your behalf—handling CAPTCHAs and OTPs interactively along the way.
+
+## ✨ Key Features
+
+- **🔐 Privacy-First Document Vault (DocVault):** Upload Aadhaar, PAN, Passports, or resumes. CivicFlow uses Gemini Vision and PaddleOCR to extract structured data and stores it with AES-256 encryption. Your sensitive data never leaks.
+- **🤖 Intelligent Form Execution (WebPilot):** Utilizing Playwright and LLMs, our executor agent dynamically reads complex, multi-page forms, generates robust automation scripts on the fly, and bypasses anti-paste restrictions.
+- **🙋‍♂️ Human-in-the-Loop Interventions:** CivicFlow is autonomous but respects boundaries. If it hits a CAPTCHA or an OTP wall, execution pauses. The user is notified (via WebSockets or Telegram), solves the challenge on the dashboard, and execution resumes seamlessly.
+- **🧠 Sahayak AI Counsellor:** A built-in AI chat widget that acts as your personal guide, helping you understand complex government requirements and suggesting which documents to use.
+- **🎨 "Bitcoin DeFi" Design System:** A custom, premium, dark-mode-first visual aesthetic built from scratch using pure CSS variables—signaling security, precision, and trust.
+
+## 🛠️ Technology Stack
+
+**Frontend**
+- React 18 + Vite 5
+- Custom Vanilla CSS Design System (Bitcoin DeFi aesthetic)
+- React Router DOM for SPA routing
+
+**Backend & Automation**
+- Python 3.10+ & FastAPI
+- Playwright (Headless Browser Automation)
+- WebSockets for real-time execution tracking
+- Motor (Async MongoDB Driver)
+
+**AI & Machine Learning**
+- Google Gemini 2.0 Flash (Core LLM for planning, extraction, and vision)
+- PaddleOCR / Poppler (Document processing)
+- LangChain / Custom Agent Architecture
+
+**Infrastructure**
+- MongoDB (Data persistence)
+- Redis (Session coordination & rate limiting)
+- Python-Telegram-Bot (Real-time notifications)
+
+---
+
+## 🏗️ Architecture Overview
 
 ```mermaid
 flowchart TB
-    subgraph Frontend["Frontend (SPA — index.html)"]
-        UI["Hash Router\n#login · #dashboard\n#form-search · #execution"]
+    subgraph Frontend["Frontend (React + Vite)"]
+        UI["React Router\n/dashboard · /form-search\n/session/:id · /execution/:id"]
         Sahayak["Sahayak Chat Widget\n(Counsellor Agent)"]
         WS_Client["WebSocket Client\nReal-time progress"]
     end
 
     subgraph Backend["Backend (FastAPI — port 8000)"]
         Auth["POST /auth/login\nPOST /auth/register"]
-        Docs["POST /documents/upload\n(DocVault → PaddleOCR)"]
+        Docs["POST /documents/upload\n(DocVault → OCR)"]
         Search["POST /search/form\n(FormSearch → Gemini)"]
         Chat["POST /chat\nWS /ws/{session_id}"]
         Sessions["GET /sessions\n/start · /execute"]
         Telegram_API["POST /telegram/webhook\nGET /telegram/link-token"]
     end
 
-    subgraph Agents["Agents"]
+    subgraph Agents["Autonomous Agents"]
         DocVault["DocVault\nPDF→Image→OCR→Encrypt"]
-        Counsellor["CounsellorAgent\nSahayak · Gemini 2.0"]
+        Counsellor["CounsellorAgent\nSahayak · Gemini"]
         FormSearch["FormSearchAgent\nGemini + Portal Knowledge"]
         WebPilot["WebPilot\nAnti-paste · CAPTCHA"]
         ScriptGen["ScriptGen\nPlaywright script generator"]
@@ -33,16 +75,10 @@ flowchart TB
         Notifier["TelegramNotifier\npython-telegram-bot"]
     end
 
-    subgraph Storage["Storage"]
+    subgraph Storage["Storage & Infra"]
         MongoDB[("MongoDB\nusers · profiles\ndocuments · sessions")]
-        Redis[("Redis\nSession coordination\nRate limiting")]
-        Uploads["./uploads/\ndocs · scripts · screenshots"]
-    end
-
-    subgraph External["External"]
-        Gemini["Google Gemini 2.0 Flash\nOCR · LLM · Vision"]
-        TelegramAPI["Telegram Bot API"]
-        GovPortal["Government Portals\npassportindia.gov.in etc."]
+        Redis[("Redis\nSession coordination")]
+        Uploads["./uploads/\ndocs · screenshots"]
     end
 
     UI -->|HTTP + JWT| Auth & Docs & Search & Chat & Sessions
@@ -51,293 +87,75 @@ flowchart TB
 
     Sessions --> ScriptGen --> Executor
     Executor -->|Playwright| WebPilot
-    WebPilot -->|Browser automation| GovPortal
+    WebPilot -->|Browser automation| GovPortal[("External\nGov Portals")]
     Executor -->|Events| WS_Client
 
-    Docs --> DocVault --> Gemini
+    Docs --> DocVault --> Gemini[("Google Gemini 2.0")]
     Chat --> Counsellor --> Gemini
     Search --> FormSearch --> Gemini
     WebPilot --> Gemini
 
     Auth & Docs & Sessions --> MongoDB
     Executor --> Redis
-    Notifier --> TelegramAPI
+    Notifier --> TelegramAPI[("Telegram API")]
     Sessions --> Notifier
-
-    DocVault --> Uploads
-    Executor --> Uploads
 ```
 
 ---
 
-## Quick Start
+## 🏁 Quick Start Guide
 
-### 1. Clone & enter directory
+### 1. Repository Setup
 ```bash
-git clone https://github.com/your-org/civicflow.git
+git clone https://github.com/team-tensors/civicflow.git
 cd civicflow
 ```
 
-### 2. Configure environment
+### 2. Environment Configuration
+Create a `.env` file in the `backend/` directory:
 ```bash
-cp .env.example backend/.env
-# Edit backend/.env — fill in GEMINI_API_KEY at minimum
+cp backend/.env.example backend/.env
+# Edit backend/.env and add your GEMINI_API_KEY
 ```
 
-### 3. Install Python dependencies
+### 3. Backend Setup
 ```bash
 cd backend
 pip install -r requirements.txt
 playwright install chromium
 ```
+*Note: Depending on your OS, you may need to install Poppler for PDF processing (`brew install poppler` on macOS, `sudo apt install poppler-utils` on Ubuntu).*
 
-### 4. Run the backend
+**Run the Backend:**
 ```bash
+# Windows
+python main.py
+# Mac/Linux
 uvicorn main:app --reload --port 8000
-# Windows: python main.py  (required for Playwright subprocess on Windows)
 ```
 
-### 5. Open the frontend
-Open `frontend/index.html` in any browser (no build step needed).
-
-### 6. (Optional) Start the mock portal for testing
+### 4. Frontend Setup
 ```bash
-python mock_portal/server.py
-# Runs on http://localhost:5001
+cd ../frontend/react-app
+npm install
+npm run dev
 ```
+Open `http://localhost:5173` in your browser.
 
 ---
 
-## Poppler Installation
+## 🎮 How to use the Demo
 
-`pdf2image` requires Poppler to convert PDFs to images.
-
-### Windows
-1. Download from: https://github.com/oschwartz10612/poppler-windows/releases
-2. Extract to `C:\poppler\`
-3. Add to `.env`:
-   ```
-   POPPLER_PATH=C:/poppler/Library/bin
-   ```
-
-### macOS
-```bash
-brew install poppler
-# Leave POPPLER_PATH empty in .env
-```
-
-### Ubuntu / Debian
-```bash
-sudo apt install poppler-utils
-# Leave POPPLER_PATH empty in .env
-```
+1. Create a new account or use the seeded demo credentials (if you ran `python scripts/seed_demo.py`).
+2. **Profile Setup**: Fill in your basic details.
+3. **Document Vault**: Upload a sample PDF or image (e.g., a dummy Aadhaar or PAN). Watch the OCR extract the data.
+4. **Form Search**: Search for a form, e.g., "Passport Application".
+5. **Review**: CivicFlow will pre-fill the form using your profile and documents. Review the mapped fields.
+6. **Execution**: Click Confirm. CivicFlow will launch a headless browser and fill the form on the target site. Watch the real-time progress. If a CAPTCHA is encountered, use the intervention panel to solve it and resume!
 
 ---
 
-## Telegram Bot Setup
+## 🏆 Built by Team Tensors
+**Faraway Hackathon 2026**
 
-1. Open Telegram and search for **@BotFather**: https://t.me/BotFather
-2. Send `/newbot` and follow the prompts
-3. Copy the token and add to `.env`:
-   ```
-   TELEGRAM_BOT_TOKEN=123456:ABC-your-token-here
-   TELEGRAM_BOT_USERNAME=YourBotName
-   TELEGRAM_WEBHOOK_SECRET=any_random_string
-   ```
-4. To receive notifications, users must link their account:
-   - In the CivicFlow app → Dashboard → **Link Telegram**
-   - Copy the generated token and send to your bot: `/start YOUR_TOKEN`
-
----
-
-## Demo Credentials
-
-After running the seed script (`python scripts/seed_demo.py`):
-
-| Field    | Value                 |
-|----------|-----------------------|
-| Email    | `demo@civicflow.in`  |
-| Password | `Demo@1234`           |
-
-The demo account includes a pre-filled profile (Aadhaar + PAN), one completed passport application, and one active session in the `paused_captcha` state.
-
----
-
-## OS-Specific Setup Notes
-
-### Windows
-- Run `python main.py` instead of `uvicorn --reload` (Playwright requires `ProactorEventLoop`)
-- Set `POPPLER_PATH` in `.env`
-- Use `pip install python-magic-bin` (instead of `python-magic`) for file type detection
-
-### macOS
-```bash
-brew install poppler
-pip install -r requirements.txt
-playwright install chromium
-```
-
-### Linux (Ubuntu/Debian)
-```bash
-sudo apt install poppler-utils libmagic1
-pip install -r requirements.txt
-playwright install chromium
-playwright install-deps chromium
-```
-
----
-
-## API Reference
-
-| Method | Endpoint | Auth | Description |
-|--------|----------|------|-------------|
-| POST | `/auth/register` | — | Create account |
-| POST | `/auth/login` | — | Login, get JWT |
-| GET | `/auth/me` | ✓ | Current user + profile |
-| POST | `/documents/upload` | ✓ | Upload + OCR document |
-| GET | `/documents/{id}` | ✓ | Document detail |
-| POST | `/documents/{id}/confirm` | ✓ | Link to profile |
-| POST | `/search/form` | ✓ | LLM portal search |
-| POST | `/search/verify` | ✓ | Verify URL is gov domain |
-| POST | `/chat` | ✓ | Message Sahayak |
-| WS | `/ws/{session_id}` | — | Live execution events |
-| POST | `/start` | ✓ | Start scraping session |
-| GET | `/sessions` | ✓ | List user sessions |
-| GET | `/sessions/{id}` | ✓ | Session detail |
-| POST | `/sessions/{id}/fill` | ✓ | Submit field values |
-| POST | `/sessions/{id}/execute` | ✓ | Start Playwright automation |
-| POST | `/sessions/{id}/resume` | ✓ | Resume after CAPTCHA |
-| POST | `/sessions/{id}/otp` | ✓ | Submit OTP |
-| POST | `/sessions/{id}/correct` | ✓ | Submit field correction |
-| GET | `/telegram/link-token` | ✓ | Generate link token |
-| POST | `/telegram/webhook` | — | Telegram Bot webhook |
-| GET | `/health` | — | Service health check |
-
-All authenticated endpoints require: `Authorization: Bearer <jwt_token>`
-
-All responses follow the format:
-```json
-{ "success": true, "message": "...", "data": { ... } }
-```
-
----
-
-## Verification & Tests
-
-### Check all services are configured
-```bash
-python scripts/verify_setup.py
-```
-
-### Seed demo data
-```bash
-python scripts/seed_demo.py
-```
-
-### Run end-to-end tests
-```bash
-# Requires backend + mock portal running
-cd backend
-pytest tests/test_e2e_full_flow.py -v
-```
-
-### Run all unit tests
-```bash
-cd backend
-pytest tests/ -v
-```
-
----
-
-## Troubleshooting
-
-### `playwright install` fails
-```bash
-pip install playwright
-playwright install chromium
-# Linux only:
-playwright install-deps chromium
-```
-
-### `PaddleOCR` import error
-```bash
-pip install paddlepaddle paddleocr
-# If still fails on Windows:
-pip install paddlepaddle-gpu  # if CUDA available
-```
-
-### `ModuleNotFoundError: jose`
-```bash
-pip install python-jose[cryptography]
-```
-
-### MongoDB connection refused
-- Ensure MongoDB is running: `mongod --dbpath ./data`
-- Or use MongoDB Atlas: set `MONGODB_URI=mongodb+srv://...` in `.env`
-
-### Telegram webhook not firing
-- Use [ngrok](https://ngrok.com/) to expose localhost: `ngrok http 8000`
-- Call `POST /telegram/setup-webhook` with your ngrok URL
-
-### Windows: `OSError: [WinError 87]` during Playwright
-- Make sure you're running `python main.py`, **not** `uvicorn --reload`
-- `reload=True` forks processes incompatibly with Playwright on Windows
-
----
-
-## Project Structure
-
-```
-civicflow/
-├── backend/
-│   ├── agents/
-│   │   ├── analyst.py          # Form data analyst
-│   │   ├── collector.py        # Data collection agent
-│   │   ├── counsellor.py       # Sahayak LLM agent
-│   │   ├── doc_vault.py        # Document OCR pipeline
-│   │   ├── executor.py         # Playwright script runner
-│   │   ├── form_finder.py      # Form discovery
-│   │   ├── form_search.py      # LLM portal search
-│   │   ├── notifier.py         # Telegram notifier
-│   │   ├── scraper.py          # Form scraper
-│   │   ├── scriptgen.py        # Playwright script generator
-│   │   └── web_pilot.py        # Anti-paste + CAPTCHA agent
-│   ├── api/
-│   │   ├── auth.py             # /auth routes
-│   │   ├── chat.py             # /chat + WebSocket
-│   │   ├── documents.py        # /documents routes
-│   │   ├── routes.py           # /start /sessions legacy routes
-│   │   ├── search.py           # /search routes
-│   │   ├── telegram.py         # /telegram routes
-│   │   └── websocket.py        # WebSocket handler
-│   ├── db/
-│   │   └── mongo.py            # Async Motor client
-│   ├── models/
-│   │   ├── chat_models.py
-│   │   ├── form_models.py
-│   │   └── session_models.py
-│   ├── tests/
-│   │   └── test_e2e_full_flow.py
-│   ├── utils/
-│   │   ├── auth.py             # JWT + password utils
-│   │   ├── encryption.py       # AES-256 field encryption
-│   │   ├── ocr.py
-│   │   └── storage.py
-│   ├── config.py
-│   ├── main.py                 # FastAPI app entry point
-│   └── requirements.txt
-├── frontend/
-│   ├── css/
-│   │   └── styles.css          # Sage-green glassmorphism design
-│   ├── js/
-│   │   └── app.js              # SPA router + all view logic
-│   └── index.html              # Single HTML shell
-├── mock_portal/
-│   └── server.py               # Flask test portal (port 5001)
-├── scripts/
-│   ├── seed_demo.py            # Seed demo data into MongoDB
-│   └── verify_setup.py         # Verify all services + config
-├── .env.example
-├── docker-compose.yml
-└── README.md
-```
+*Empowering citizens with secure, intelligent automation.*
