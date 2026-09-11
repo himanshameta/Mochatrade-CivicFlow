@@ -1,52 +1,57 @@
 <div align="center">
- 
+
   <h1>CivicFlow</h1>
   <p><strong>Private AI-Assisted Form Automation</strong></p>
   <p><em>Built by <b>Team Tensors</b> for the <b>Faraway Hackathon 2026</b></em></p>
 </div>
 
----
+***
 
-## 🚀 The Vision
+## Overview
 
-Government and institutional portals are notoriously complex, repetitive, and frustrating to navigate. Citizens spend countless hours repeatedly typing the same information and uploading the same documents across different platforms.
+Government and institutional portals are often complex, repetitive, and frustrating to navigate. People spend a large amount of time re-entering the same information and repeatedly uploading the same documents across different services.
 
-**CivicFlow** is a privacy-first, intelligent automation platform that acts as your personal digital assistant. You securely store your core identity documents and profile once. When you need to fill a form, CivicFlow's AI agents navigate the portal, extract what's needed, map your data to the form, ask for your final review, and execute the submission on your behalf—handling CAPTCHAs and OTPs interactively along the way.
+**CivicFlow** is a privacy-first, intelligent form automation platform that acts as a personal digital assistant. Users securely store their core profile and documents once, and CivicFlow helps scrape forms, map saved data to fields, request final user review, and execute submissions with human-in-the-loop support for CAPTCHA and OTP steps.
 
-## ✨ Key Features
+## Key Features
 
-- **🔐 Privacy-First Document Vault (DocVault):** Upload Aadhaar, PAN, Passports, or resumes. CivicFlow uses Gemini Vision and PaddleOCR to extract structured data and stores it with AES-256 encryption. Your sensitive data never leaks.
-- **🤖 Intelligent Form Execution (WebPilot):** Utilizing Playwright and LLMs, our executor agent dynamically reads complex, multi-page forms, generates robust automation scripts on the fly, and bypasses anti-paste restrictions.
-- **🙋‍♂️ Human-in-the-Loop Interventions:** CivicFlow is autonomous but respects boundaries. If it hits a CAPTCHA or an OTP wall, execution pauses. The user is notified (via WebSockets or Telegram), solves the challenge on the dashboard, and execution resumes seamlessly.
-- **🧠 Sahayak AI Counsellor:** A built-in AI chat widget that acts as your personal guide, helping you understand complex government requirements and suggesting which documents to use.
-- **🎨 "Bitcoin DeFi" Design System:** A custom, premium, dark-mode-first visual aesthetic built from scratch using pure CSS variables—signaling security, precision, and trust.
+- **Privacy-First Document Vault (DocVault):** Upload Aadhaar, PAN, passports, resumes, and other documents. CivicFlow uses OCR and vision models to extract structured data and store it securely.
+- **Intelligent Form Execution (WebPilot):** Uses Playwright and LLM-assisted planning to understand complex forms, generate automation steps dynamically, and handle real-world field behavior.
+- **Human-in-the-Loop Interventions:** If CivicFlow encounters a CAPTCHA, OTP, or another manual checkpoint, execution pauses and resumes after user action.
+- **AI Counsellor (Sahayak):** An embedded assistant that helps users understand form requirements and decide which profile data or documents to use.
+- **Custom Design System:** A premium dark-mode-first interface based on the “Bitcoin DeFi” visual language, focused on trust, clarity, and technical precision.
 
-## 🛠️ Technology Stack
+## Technology Stack
 
-**Frontend**
-- React 18 + Vite 5
-- Custom Vanilla CSS Design System (Bitcoin DeFi aesthetic)
-- React Router DOM for SPA routing
+### Frontend
 
-**Backend & Automation**
-- Python 3.10+ & FastAPI
-- Playwright (Headless Browser Automation)
+- React 18
+- Vite 5
+- React Router DOM
+- Custom CSS design system
+
+### Backend and Automation
+
+- Python 3.10+
+- FastAPI
+- Playwright
 - WebSockets for real-time execution tracking
-- Motor (Async MongoDB Driver)
+- Motor (async MongoDB driver)
 
-**AI & Machine Learning**
-- Google Gemini 2.0 Flash (Core LLM for planning, extraction, and vision)
-- PaddleOCR / Poppler (Document processing)
-- LangChain / Custom Agent Architecture
+### AI and Document Intelligence
 
-**Infrastructure**
-- MongoDB (Data persistence)
-- Redis (Session coordination & rate limiting)
-- Python-Telegram-Bot (Real-time notifications)
+- Google Gemini 2.0 Flash
+- PaddleOCR
+- Poppler for PDF processing
+- LangChain and custom agent orchestration
 
----
+### Infrastructure
 
-## 🏗️ Architecture Overview
+- MongoDB
+- Redis
+- Python Telegram Bot
+
+## Architecture Overview
 
 ```mermaid
 flowchart TB
@@ -56,38 +61,42 @@ flowchart TB
         WS_Client["WebSocket Client\nReal-time progress"]
     end
 
-    subgraph Backend["Backend (FastAPI — port 8000)"]
+    subgraph Backend["Backend (FastAPI)"]
         Auth["POST /auth/login\nPOST /auth/register"]
         Docs["POST /documents/upload\n(DocVault → OCR)"]
         Search["POST /search/form\n(FormSearch → Gemini)"]
         Chat["POST /chat\nWS /ws/{session_id}"]
         Sessions["GET /sessions\n/start · /execute"]
-        Telegram_API["POST /telegram/webhook\nGET /telegram/link-token"]
+        TelegramHook["POST /telegram/webhook\nGET /telegram/link-token"]
     end
 
     subgraph Agents["Autonomous Agents"]
-        DocVault["DocVault\nPDF→Image→OCR→Encrypt"]
+        DocVault["DocVault\nPDF → Image → OCR → Encrypt"]
         Counsellor["CounsellorAgent\nSahayak · Gemini"]
         FormSearch["FormSearchAgent\nGemini + Portal Knowledge"]
-        WebPilot["WebPilot\nAnti-paste · CAPTCHA"]
-        ScriptGen["ScriptGen\nPlaywright script generator"]
-        Executor["Executor\nSubprocess runner"]
+        WebPilot["WebPilot\nForm Interaction Agent"]
+        ScriptGen["ScriptGen\nPlaywright Script Generator"]
+        Executor["Executor\nSubprocess Runner"]
         Notifier["TelegramNotifier\npython-telegram-bot"]
     end
 
-    subgraph Storage["Storage & Infra"]
-        MongoDB[("MongoDB\nusers · profiles\ndocuments · sessions")]
+    subgraph Storage["Storage and Infra"]
+        MongoDB[("MongoDB\nusers · profiles\nsessions")]
         Redis[("Redis\nSession coordination")]
         Uploads["./uploads/\ndocs · screenshots"]
     end
 
-    UI -->|HTTP + JWT| Auth & Docs & Search & Chat & Sessions
+    UI -->|HTTP + JWT| Auth
+    UI -->|HTTP + JWT| Docs
+    UI -->|HTTP + JWT| Search
+    UI -->|HTTP + JWT| Chat
+    UI -->|HTTP + JWT| Sessions
     UI -->|WebSocket| WS_Client
-    WS_Client -->|ws:///ws/{id}| Chat
+    WS_Client -->|ws:///ws/{session_id}| Chat
 
     Sessions --> ScriptGen --> Executor
     Executor -->|Playwright| WebPilot
-    WebPilot -->|Browser automation| GovPortal[("External\nGov Portals")]
+    WebPilot -->|Browser automation| GovPortal[("External Portals")]
     Executor -->|Events| WS_Client
 
     Docs --> DocVault --> Gemini[("Google Gemini 2.0")]
@@ -95,67 +104,85 @@ flowchart TB
     Search --> FormSearch --> Gemini
     WebPilot --> Gemini
 
-    Auth & Docs & Sessions --> MongoDB
+    Auth --> MongoDB
+    Docs --> MongoDB
+    Sessions --> MongoDB
     Executor --> Redis
-    Notifier --> TelegramAPI[("Telegram API")]
     Sessions --> Notifier
+    Notifier --> TelegramAPI[("Telegram API")]
 ```
 
----
+## Quick Start
 
-## 🏁 Quick Start Guide
+### 1. Clone the Repository
 
-### 1. Repository Setup
 ```bash
 git clone https://github.com/team-tensors/civicflow.git
 cd civicflow
 ```
 
-### 2. Environment Configuration
-Create a `.env` file in the `backend/` directory:
+### 2. Configure Environment Variables
+
+Create a `.env` file inside the `backend/` directory:
+
 ```bash
 cp backend/.env.example backend/.env
-# Edit backend/.env and add your GEMINI_API_KEY
 ```
 
+Then edit `backend/.env` and add the required secrets such as your `GEMINI_API_KEY`.
+
 ### 3. Backend Setup
+
 ```bash
 cd backend
 pip install -r requirements.txt
 playwright install chromium
 ```
-*Note: Depending on your OS, you may need to install Poppler for PDF processing (`brew install poppler` on macOS, `sudo apt install poppler-utils` on Ubuntu).*
 
-**Run the Backend:**
+Depending on your operating system, you may also need Poppler for PDF processing:
+
+- macOS: `brew install poppler`
+- Ubuntu: `sudo apt install poppler-utils`
+
+Run the backend:
+
 ```bash
 # Windows
 python main.py
-# Mac/Linux
+
+# macOS / Linux
 uvicorn main:app --reload --port 8000
 ```
 
 ### 4. Frontend Setup
+
 ```bash
 cd ../frontend/react-app
 npm install
 npm run dev
 ```
+
 Open `http://localhost:5173` in your browser.
 
----
+## Demo Flow
 
-## 🎮 How to use the Demo
+1. Create a new account or use seeded demo credentials.
+2. Complete **Profile Setup** with your basic information.
+3. Upload sample documents in **Document Vault** and review extracted OCR data.
+4. Use **Form Search** to look for a target workflow, such as a passport application.
+5. Review mapped fields in the **Review Before Filing** screen.
+6. Confirm execution and let CivicFlow automate the form.
+7. If a CAPTCHA or OTP is encountered, complete it and resume execution.
 
-1. Create a new account or use the seeded demo credentials (if you ran `python scripts/seed_demo.py`).
-2. **Profile Setup**: Fill in your basic details.
-3. **Document Vault**: Upload a sample PDF or image (e.g., a dummy Aadhaar or PAN). Watch the OCR extract the data.
-4. **Form Search**: Search for a form, e.g., "Passport Application".
-5. **Review**: CivicFlow will pre-fill the form using your profile and documents. Review the mapped fields.
-6. **Execution**: Click Confirm. CivicFlow will launch a headless browser and fill the form on the target site. Watch the real-time progress. If a CAPTCHA is encountered, use the intervention panel to solve it and resume!
+## Notes
 
----
+- CivicFlow is designed to be privacy-first and human-reviewed.
+- Users remain in control before any final submission.
+- Document extraction, field mapping, and execution can be improved incrementally as agents evolve.
 
-## 🏆 Built by Team Tensors
-**Faraway Hackathon 2026**
+## Team
+
+**Team Tensors**  
+Built for **Faraway Hackathon 2026**
 
 *Empowering citizens with secure, intelligent automation.*
