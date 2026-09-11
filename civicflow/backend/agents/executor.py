@@ -101,25 +101,36 @@ def extract_selector_from_error(error_msg: str) -> Optional[str]:
 def _run_script_in_thread(script_path: str, output_queue: queue.Queue):
     """Run the Playwright script in a thread, capture stdout line by line."""
     try:
+        # Backend directory — all generated scripts need this on their sys.path
+        backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+        # Inherit current env and inject PYTHONPATH so generated scripts can
+        # import agents, utils, models without relying on __file__-based sys.path
+        env = os.environ.copy()
+        existing_pythonpath = env.get("PYTHONPATH", "")
+        env["PYTHONPATH"] = backend_dir + (os.pathsep + existing_pythonpath if existing_pythonpath else "")
+
         proc = subprocess.Popen(
             [sys.executable, script_path],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            bufsize=1  # Line buffered
+            bufsize=1,  # Line buffered
+            cwd=backend_dir,
+            env=env,
         )
-        
+
         for line in iter(proc.stdout.readline, ""):
             line = line.strip()
             if line:
                 output_queue.put(("stdout", line))
-        
+
         proc.wait()
         stderr = proc.stderr.read()
         if stderr:
             output_queue.put(("stderr", stderr))
         output_queue.put(("done", proc.returncode))
-        
+
     except Exception as e:
         output_queue.put(("error", str(e)))
 
@@ -276,6 +287,46 @@ async def check_resume_signal(session_id: str) -> Optional[str]:
         # Delete the key after reading
         await redis_client.delete(f"resume:{session_id}")
     return signal
+
+
+async def detect_visible_captcha(page) -> dict:
+    """
+    Helper function to run inside Playwright context to detect if a CAPTCHA
+    is actually visible/blocking the user.
+    """
+    try:
+        # Check reCAPTCHA iframe
+        recaptcha_iframes = await page.locator('iframe[title*="reCAPTCHA"], iframe[src*="recaptcha"]').all()
+        for frame in recaptcha_iframes:
+            if await frame.is_visible():
+                return {"present": True, "type": "recaptcha", "reason": "Visible reCAPTCHA iframe found", "selector": "iframe[src*='recaptcha']"}
+        
+        # Check g-recaptcha container
+        g_recaptcha = page.locator('.g-recaptcha')
+        if await g_recaptcha.count() > 0 and await g_recaptcha.first.is_visible():
+            return {"present": True, "type": "recaptcha", "reason": "Visible .g-recaptcha element found", "selector": ".g-recaptcha"}
+
+        # Check hCaptcha iframe
+        hcaptcha_iframes = await page.locator('iframe[src*="hcaptcha"]').all()
+        for frame in hcaptcha_iframes:
+            if await frame.is_visible():
+                return {"present": True, "type": "hcaptcha", "reason": "Visible hCaptcha iframe found", "selector": "iframe[src*='hcaptcha']"}
+                
+        # Check h-captcha container
+        h_captcha = page.locator('.h-captcha')
+        if await h_captcha.count() > 0 and await h_captcha.first.is_visible():
+            return {"present": True, "type": "hcaptcha", "reason": "Visible .h-captcha element found", "selector": ".h-captcha"}
+
+        # Check generic captcha container
+        for sel in ['#captcha_container', '.captcha-container', '#captchaBox']:
+            loc = page.locator(sel)
+            if await loc.count() > 0 and await loc.first.is_visible():
+                return {"present": True, "type": "image", "reason": f"Visible element found: {sel}", "selector": sel}
+
+    except Exception as e:
+        print(f"Error checking CAPTCHA visibility: {e}")
+        
+    return {"present": False, "type": None, "reason": None, "selector": None}
 
 
 async def check_otp_value(session_id: str) -> Optional[str]:

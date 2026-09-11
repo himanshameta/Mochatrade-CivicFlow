@@ -35,6 +35,10 @@ class PipelineState(TypedDict):
     data_requirements: list  # list of UserDataItem dicts
     pre_filled_values: dict  # {field_name: value} from profile mapping
     missing_fields: list  # [field_label] for required fields with no data
+    file_requirements: list # requirements for file uploads
+    matched_documents: list # physical documents matched
+    blockers: list # strings explaining why execution is blocked
+    ready_for_execution: bool
     generated_script: Optional[str]
     script_path: Optional[str]
     status: str
@@ -204,30 +208,132 @@ async def node_analyst(state: PipelineState) -> PipelineState:
     return state
 
 
-# Node 4: Check Data Completeness
+# Node 4: Check Data Completeness and Build Review Payload
 async def node_check_completeness(state: PipelineState) -> PipelineState:
-    """Check if all required data has been collected - but allow continuing regardless."""
-    print(f"\n[Pipeline] Node: Check Completeness")
+    """Check if all required data has been collected, match documents, and pause for confirmation."""
+    print(f"\n[Pipeline] Node: Check Completeness & Build Review Payload")
     
-    # Always proceed to scriptgen - missing fields will be left blank or use defaults
-    state["status"] = "ready"
-    missing_count = len(state.get("missing_fields", []))
+    # 1. Fetch user's stored vault documents
+    user_documents = []
+    try:
+        from db.vault_db import list_documents
+        if state.get("user_id"):
+            vault_docs = await list_documents(state["user_id"])
+            user_documents = [json.loads(d.model_dump_json()) for d in vault_docs]
+    except Exception as e:
+        print(f"[Pipeline] Could not fetch vault documents: {e}")
+
+    # Fallback: also try legacy physical_documents
+    if not user_documents:
+        try:
+            from db.mongo import get_db
+            db = await get_db()
+            if db is not None:
+                cursor = db.physical_documents.find({"user_id": state["user_id"], "is_active": True, "is_deleted": {"$ne": True}})
+                legacy_docs = await cursor.to_list(length=100)
+                for ld in legacy_docs:
+                    ld.pop("_id", None)
+                    # Normalize legacy fields to vault format
+                    ld.setdefault("document_id", ld.get("doc_id", ""))
+                    ld.setdefault("display_name", ld.get("doc_label", ld.get("original_filename", "")))
+                    ld.setdefault("category", "other")
+                    ld.setdefault("extension", "")
+                    user_documents.append(ld)
+        except Exception as e:
+            print(f"[Pipeline] Could not fetch legacy documents: {e}")
+
+    # 2. Extract file fields from scraped form
+    scraped_form = state.get("scraped_form")
+    fields = []
+    if scraped_form:
+        if isinstance(scraped_form, dict):
+            fields = scraped_form.get("fields", [])
+        else:
+            fields = getattr(scraped_form, "fields", [])
+
+    file_fields = [f for f in fields if (f.get("field_type") if isinstance(f, dict) else getattr(f, "field_type", "")) == "file"]
     
-    if missing_count > 0:
-        print(f"[Pipeline] ⚠ {missing_count} fields have no data - will proceed with available data")
+    # 3. Match documents using ranked matcher
+    from utils.document_matcher import match_documents_for_file_field
+    
+    file_requirements = []
+    blockers = []
+    
+    for f in file_fields:
+        f_dict = f if isinstance(f, dict) else f.model_dump()
+        key = f_dict.get("name") or f_dict.get("id_attr") or f_dict.get("label", "file_upload")
+        label = f_dict.get("label", "Unnamed File Field")
+        required = f_dict.get("required", False)
+        accept = f_dict.get("accept", "")
+        multiple = f_dict.get("multiple", False)
+        selector = f_dict.get("selector", "")
+        
+        ranked_matches = match_documents_for_file_field(f_dict, user_documents)
+        
+        matched_saved = []
+        for m in ranked_matches:
+            matched_saved.append({
+                "document_id": m.document_id,
+                "display_name": m.display_name,
+                "category": m.category,
+                "mime_type": m.mime_type,
+                "score": m.score,
+            })
+        
+        # Determine status
+        status = "optional_unset"
+        if required and not matched_saved:
+            status = "missing"
+            accept_msg = f" ({accept})" if accept else ""
+            blockers.append(f"Required document '{label}'{accept_msg} is missing. Please upload it.")
+        elif required:
+            status = "missing"  # Still missing until user explicitly selects
+        
+        file_requirements.append({
+            "key": key,
+            "label": label,
+            "selector": selector,
+            "required": required,
+            "accept": accept,
+            "multiple": multiple,
+            "matched_saved_documents": matched_saved,
+            "selected_document_id": None,
+            "status": status,
+        })
+
+    # Add text field blockers
+    for mf in state.get("missing_fields", []):
+        blockers.append(f"Required text field '{mf}' is missing.")
+        
+    state["file_requirements"] = file_requirements
+    state["matched_documents"] = []  # Deprecated, kept for compat
+    state["blockers"] = blockers
+    state["ready_for_execution"] = len(blockers) == 0
+
+    # Pause for user confirmation
+    state["status"] = "awaiting_confirmation"
+    
+    if blockers:
+        print(f"[Pipeline] ⚠ {len(blockers)} blockers found")
     else:
-        print(f"[Pipeline] ✓ All data available")
+        print(f"[Pipeline] ✓ All required data available, awaiting user confirmation")
     
     # Update session
-    await session_store.update_status(state["session_id"], state["status"])
+    session = await session_store.load(state["session_id"])
+    if session:
+        session.file_requirements = file_requirements
+        session.blockers = blockers
+        session.ready_for_execution = state["ready_for_execution"]
+        session.status = state["status"]
+        await session_store.save(session)
     
     return state
 
 
 # Conditional routing after completeness check
 def route_after_completeness(state: PipelineState) -> str:
-    """Always proceed to scriptgen - user can fill missing fields later if needed."""
-    return "scriptgen"
+    """Pause pipeline at check_completeness. User must trigger resume."""
+    return END
 
 
 # Node 5: ScriptGen Agent
@@ -356,6 +462,12 @@ async def node_executor(state: PipelineState) -> PipelineState:
         elif result["status"] == "failed":
             state["error"] = result["message"]
             print(f"[Pipeline] ✗ Execution failed: {result['message']}")
+            
+            # PART 8: Retry logic fix
+            if "Script error" in result["message"] or "SyntaxError" in result["message"]:
+                if state.get("retry_count", 0) < 2:
+                    print("[Pipeline] ↻ Executor failure was due to generated script, preparing for ScriptGen retry")
+                    state["status"] = "retrying"
         
     except Exception as e:
         state["error"] = f"Execution exception: {str(e)}"
@@ -377,7 +489,7 @@ def route_after_executor(state: PipelineState) -> str:
     if status in ("paused_captcha", "paused_otp", "paused_payment"):
         return END   # Human action needed — stop graph, wait for API resume
     
-    if status == "failed":
+    if status in ("failed", "retrying"):
         if retry_count < 2:
             print(f"[Pipeline] Retrying script generation (attempt {retry_count + 1}/2)")
             return "scriptgen"
@@ -444,7 +556,17 @@ def build_graph():
         }
     )
     
-    workflow.add_edge("analyst", "scriptgen")  # Skip completeness check, always proceed
+    workflow.add_edge("analyst", "check_completeness")
+    
+    # Conditional edge after check_completeness
+    workflow.add_conditional_edges(
+        "check_completeness",
+        route_after_completeness,
+        {
+            END: END,
+            "scriptgen": "scriptgen"
+        }
+    )
     
     workflow.add_edge("scriptgen", "executor")
     
@@ -528,6 +650,10 @@ async def run_pipeline(session_id: str, url: str, user_id: Optional[str] = None,
         "data_requirements": [],
         "pre_filled_values": {},
         "missing_fields": [],
+        "file_requirements": [],
+        "matched_documents": [],
+        "blockers": [],
+        "ready_for_execution": False,
         "generated_script": None,
         "script_path": None,
         "status": "created",
@@ -642,6 +768,10 @@ async def resume_pipeline(
             "data_requirements": [item.model_dump() if hasattr(item, 'model_dump') else item for item in session.data_requirements],
             "pre_filled_values": session_dict.get("pre_filled_values", {}),
             "missing_fields": session_dict.get("missing_fields", []),
+            "file_requirements": session_dict.get("file_requirements", []),
+            "matched_documents": session_dict.get("matched_documents", []),
+            "blockers": session_dict.get("blockers", []),
+            "ready_for_execution": session_dict.get("ready_for_execution", False),
             "generated_script": session.generated_script,
             "script_path": session_dict.get("script_path"),
             "status": "ready",
@@ -650,17 +780,13 @@ async def resume_pipeline(
             "retry_count": 0
         }
         
-        # Re-enter graph at check_completeness
+        # Re-enter graph at scriptgen since data is confirmed
         try:
-            # Run from completeness check onwards
-            state = await node_check_completeness(state)
+            state = await node_scriptgen(state)
+            state = await node_executor(state)
             
-            if state["status"] == "ready":
-                state = await node_scriptgen(state)
-                state = await node_executor(state)
-                
-                if state["status"] == "completed":
-                    state = await node_notifier(state)
+            if state["status"] == "completed":
+                state = await node_notifier(state)
             
             print(f"\n{'=' * 80}")
             print(f"Pipeline Resume Complete")

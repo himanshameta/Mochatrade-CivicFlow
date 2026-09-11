@@ -37,7 +37,7 @@ async def call_openrouter(messages: List[Dict], api_key: str) -> Dict:
                 "X-Title": "CivicFlow"
             },
             content=json.dumps({
-                "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
+                "model": "openai/gpt-oss-120b:free",
                 "messages": messages,
                 "reasoning": {"enabled": True},
                 "temperature": 0.1,
@@ -188,7 +188,7 @@ Rules:
         return {
             **extracted_json,
             "extraction_success": True,
-            "extraction_engine": "nemotron-llm",
+            "extraction_engine": "openai/gpt-oss-120b:free",
             "reasoning_used": True
         }
     

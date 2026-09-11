@@ -22,10 +22,10 @@ class Settings(BaseSettings):
     openrouter_api_key: str = ""
     openrouter_site_url: str = "https://civicflow.app"
     openrouter_site_name: str = "CivicFlow"
-    openrouter_model: str = "nvidia/nemotron-3-ultra-550b-a55b:free"
+    openrouter_model: str = "openai/gpt-oss-120b:free"
     
     # --- LLM Extraction ---
-    llm_extraction_model: str = "nvidia/nemotron-3-ultra-550b-a55b:free"
+    llm_extraction_model: str = "openai/gpt-oss-120b:free"
 
     # --- OCR Service ---
     ocr_api_url: str = "http://localhost:8081"

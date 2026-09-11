@@ -52,7 +52,7 @@ logger.info("="*60)
 
 # ── Directory setup ────────────────────────────────────────────────────────
 upload_dir = os.getenv("UPLOAD_DIR", "./uploads")
-for subdir in ["docs", "scripts", "screenshots"]:
+for subdir in ["docs", "scripts", "screenshots", "user_docs", "temp_sessions"]:
     Path(upload_dir, subdir).mkdir(parents=True, exist_ok=True)
 
 # ── Router imports ─────────────────────────────────────────────────────────
@@ -225,6 +225,12 @@ async def startup_event():
             from config import settings
             await connect_mongo(mongo_uri, settings.mongo_db_name)
             logger.info("MongoDB     : connected")
+            # Ensure vault indexes
+            try:
+                from db.vault_db import ensure_vault_indexes
+                await ensure_vault_indexes()
+            except Exception as e:
+                logger.warning("Vault index creation warning: %s", e)
         except Exception as e:
             logger.warning("MongoDB connection failed: %s — using in-memory fallback", e)
     else:

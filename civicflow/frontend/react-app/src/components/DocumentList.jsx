@@ -2,18 +2,28 @@ import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import axios from 'axios'
 
+const CATEGORY_ICONS = {
+  identity: '🆔', address_proof: '🏠', education: '🎓', certificate: '📜',
+  photo: '📷', resume: '📋', financial: '💰', medical: '🏥', other: '📄',
+}
+
+const CATEGORY_LABELS = {
+  identity: 'Identity', address_proof: 'Address Proof', education: 'Education',
+  certificate: 'Certificate', photo: 'Photo', resume: 'Resume',
+  financial: 'Financial', medical: 'Medical', other: 'Other',
+}
+
 const DocumentList = ({ user, showToast }) => {
   const navigate = useNavigate()
   const [documents, setDocuments] = useState([])
   const [loading, setLoading] = useState(true)
+  const [activeCategory, setActiveCategory] = useState('all')
 
-  useEffect(() => {
-    loadDocuments()
-  }, [])
+  useEffect(() => { loadDocuments() }, [])
 
   const loadDocuments = async () => {
     try {
-      const response = await axios.get('/documents/list')
+      const response = await axios.get('/documents/vault/list')
       setDocuments(response.data.data.documents || [])
     } catch (error) {
       showToast('Failed to load documents', 'error')
@@ -24,31 +34,17 @@ const DocumentList = ({ user, showToast }) => {
 
   const handleDelete = async (docId) => {
     if (!confirm('Are you sure you want to delete this document?')) return
-
     try {
-      await axios.delete(`/documents/${docId}`)
-      showToast('Document deleted successfully', 'success')
+      await axios.delete(`/documents/vault/${docId}`)
+      showToast('Document deleted', 'success')
       loadDocuments()
     } catch (error) {
       showToast('Failed to delete document', 'error')
     }
   }
 
-  const handleViewFields = async (docId) => {
-    try {
-      const response = await axios.get(`/documents/${docId}/fields`)
-      const fields = response.data.data.fields
-      
-      let fieldsText = 'Extracted Fields:\n\n'
-      Object.entries(fields).forEach(([key, value]) => {
-        fieldsText += `${key}: ${value}\n`
-      })
-      
-      alert(fieldsText)
-    } catch (error) {
-      showToast('Failed to load document fields', 'error')
-    }
-  }
+  const categories = ['all', ...new Set(documents.map(d => d.category))]
+  const filtered = activeCategory === 'all' ? documents : documents.filter(d => d.category === activeCategory)
 
   if (loading) return <div className="loading-overlay"><div className="spinner"></div></div>
 
@@ -57,56 +53,52 @@ const DocumentList = ({ user, showToast }) => {
       <div className="page-container">
         <div className="page-hero">
           <h2>My Documents</h2>
-          <p>Manage your uploaded documents</p>
+          <p>Your private document vault — stored locally only</p>
         </div>
 
         <div className="documents-actions">
-          <button className="btn btn-primary" onClick={() => navigate('/documents/upload')}>
-            + Upload New Document
-          </button>
+          <button className="btn btn-primary" onClick={() => navigate('/documents/upload')}>+ Upload New Document</button>
         </div>
 
-        {documents.length === 0 ? (
+        {/* Category tabs */}
+        {documents.length > 0 && (
+          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '1.5rem' }}>
+            {categories.map(cat => (
+              <button key={cat} onClick={() => setActiveCategory(cat)}
+                className={`btn btn-sm ${activeCategory === cat ? 'btn-primary' : 'btn-outline'}`}
+                style={{ textTransform: 'capitalize', fontSize: '0.85rem' }}>
+                {cat === 'all' ? `📁 All (${documents.length})` : `${CATEGORY_ICONS[cat] || '📄'} ${CATEGORY_LABELS[cat] || cat} (${documents.filter(d => d.category === cat).length})`}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {filtered.length === 0 ? (
           <div className="glass-card empty-state">
             <div className="empty-icon">📄</div>
-            <h3>No Documents Yet</h3>
+            <h3>{documents.length === 0 ? 'No Documents Yet' : 'No documents in this category'}</h3>
             <p>Upload your first document to get started with automated form filling</p>
-            <button className="btn btn-primary" onClick={() => navigate('/documents/upload')}>
-              Upload Document
-            </button>
+            <button className="btn btn-primary" onClick={() => navigate('/documents/upload')}>Upload Document</button>
           </div>
         ) : (
           <div className="documents-grid">
-            {documents.map(doc => (
-              <div key={doc.doc_id} className="document-card glass-card">
-                <div className="document-icon">
-                  {doc.doc_type === 'aadhaar' && '🆔'}
-                  {doc.doc_type === 'pan' && '💳'}
-                  {doc.doc_type === 'passport' && '🛂'}
-                  {doc.doc_type === 'driving_license' && '🚗'}
-                  {doc.doc_type === 'voter_id' && '🗳️'}
-                  {!['aadhaar', 'pan', 'passport', 'driving_license', 'voter_id'].includes(doc.doc_type) && '📄'}
-                </div>
+            {filtered.map(doc => (
+              <div key={doc.document_id} className="document-card glass-card">
+                <div className="document-icon">{CATEGORY_ICONS[doc.category] || '📄'}</div>
                 <div className="document-info">
-                  <h4>{doc.doc_type.replace(/_/g, ' ').toUpperCase()}</h4>
+                  <h4>{doc.display_name}</h4>
                   <p className="document-filename">{doc.original_filename}</p>
-                  <p className="document-date">
-                    Uploaded: {new Date(doc.uploaded_at).toLocaleDateString()}
+                  <p style={{ fontSize: '0.75rem', margin: '0.25rem 0' }}>
+                    <span style={{ padding: '0.15rem 0.4rem', borderRadius: '4px', background: 'rgba(99,102,241,0.1)', color: '#6366f1', fontSize: '0.7rem', textTransform: 'capitalize' }}>
+                      {(doc.category || 'other').replace(/_/g, ' ')}
+                    </span>
+                    {doc.subcategory && <span style={{ marginLeft: '0.5rem', color: '#6b7280' }}>{doc.subcategory}</span>}
                   </p>
+                  <p className="document-date">Uploaded: {new Date(doc.created_at).toLocaleDateString()}</p>
+                  {doc.size_bytes > 0 && <p style={{ fontSize: '0.7rem', color: '#9ca3af' }}>{(doc.size_bytes / 1024).toFixed(1)} KB</p>}
                 </div>
                 <div className="document-actions">
-                  <button
-                    className="btn btn-sm btn-outline"
-                    onClick={() => handleViewFields(doc.doc_id)}
-                  >
-                    View Fields
-                  </button>
-                  <button
-                    className="btn btn-sm btn-danger"
-                    onClick={() => handleDelete(doc.doc_id)}
-                  >
-                    Delete
-                  </button>
+                  <button className="btn btn-sm btn-danger" onClick={() => handleDelete(doc.document_id)}>Delete</button>
                 </div>
               </div>
             ))}

@@ -100,17 +100,29 @@ async def analyst(scraped_form: ScrapedForm, user_profile: dict) -> tuple[list[U
         
         # Check if we have a value from profile
         key = name or field_id or label
-        value = pre_filled_values.get(key)
+        raw_value = pre_filled_values.get(key)
+        
+        # Defensive normalization
+        try:
+            from utils.generic_mapper import normalize_mapped_value_for_storage, normalize_example_value
+            storage_value = normalize_mapped_value_for_storage(raw_value) if raw_value is not None else None
+            example_value = normalize_example_value(example)
+        except Exception as e:
+            print(f"[Analyst] Warning: Failed to normalize values for {label}: {e}")
+            storage_value = str(raw_value) if raw_value is not None else None
+            example_value = str(example)
+
+        print(f"[Analyst] Field {label} mapped raw={raw_value} normalized={storage_value}")
         
         item = UserDataItem(
             field_id=field_id,
             label=label,
             input_type=input_type,
             description=description,
-            example=example,
-            value=value,
+            example=example_value,
+            value=storage_value,
             document_path=None,
-            extracted_from_doc=bool(value)
+            extracted_from_doc=bool(storage_value)
         )
         data_items.append(item)
     

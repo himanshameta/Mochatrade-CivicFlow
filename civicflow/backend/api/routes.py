@@ -533,122 +533,492 @@ async def fill_all_fields(session_id: str, request: FillAllFieldsRequest):
 
 @router.get("/sessions/{session_id}/confirm-data")
 async def get_confirmation_data(session_id: str):
-    """Get all pre-filled data for user review before autofill."""
+    """
+    Get normalized, validated, decrypted form data for user review.
+
+    Returns the stable ConfirmDataPayload with:
+    - canonical_fields: fields with autofill values
+    - editable_fields: fields the user can edit
+    - missing_required_fields: required fields with no value
+    - file_requirements: file upload requirements with matching status
+    - blockers: reasons execution cannot proceed
+    - warnings: informational messages (e.g. rejected values)
+    - status / ready_for_execution: always consistent
+    """
     try:
+        from utils.field_validation import (
+            flatten_canonical_profile,
+            build_review_blockers_and_warnings,
+            infer_semantic_label,
+            sanitize_autofill_value,
+        )
         from utils.generic_mapper import (
-            get_flat_user_profile, 
             match_profile_value_to_field,
             compute_stable_field_key,
-            compute_missing_required_fields
+            compute_missing_required_fields,
         )
-        
+        from utils.document_matcher import match_user_document_to_field
+
         session = await session_store.load(session_id)
         if not session:
             raise HTTPException(status_code=404, detail="Session not found")
-        
-        # Fetch latest from DB if user_id exists
+
+        if not session.scraped_form:
+            raise HTTPException(
+                status_code=400,
+                detail="Form has not been scraped yet. Please wait for analysis to complete."
+            )
+
+        # ── Step 1: Get clean, decrypted profile ──────────────────────────
+        profile_warnings = []
         db_profile = {}
         if session.user_id:
             try:
-                db_profile = await get_flat_user_profile(session.user_id)
-                print(f"[ConfirmData] Loaded DB profile keys: {list(db_profile.keys())}")
+                db_profile, profile_warnings = await flatten_canonical_profile(session.user_id)
+                print(f"[ConfirmData] Loaded {len(db_profile)} decrypted profile fields, {len(profile_warnings)} warnings")
             except Exception as e:
-                print(f"[ConfirmData] Could not fetch DB profile: {e}")
-        
+                print(f"[ConfirmData] Profile fetch error: {e}")
+                profile_warnings.append(f"Profile loading failed: {str(e)}")
+
         # Merge: DB profile + existing session values (session takes priority)
-        merged_profile = {**db_profile, **(session.pre_filled_values or {})}
-        
-        # Build form fields with intelligent matching
-        form_fields = []
-        pre_filled_values = {}
-        matched_count = 0
-        
-        if session.scraped_form:
-            scraped_form = session.scraped_form
-            scraped_form_dict = scraped_form.model_dump() if hasattr(scraped_form, "model_dump") else scraped_form
-            fields = scraped_form_dict.get('fields', [])
-            
-            for field in fields:
-                field_dict = field if isinstance(field, dict) else field.model_dump()
-                
-                # Get stable field key for frontend and executor
-                stable_key = compute_stable_field_key(field_dict)
-                
-                # Try intelligent matching
-                matched_profile_key, matched_value = match_profile_value_to_field(field_dict, merged_profile)
-                
-                # Determine source
-                source = 'none'
-                final_value = ''
-                
-                if matched_value:
-                    final_value = str(matched_value)
-                    matched_count += 1
-                    
-                    # Check if from session or DB
-                    if stable_key in (session.pre_filled_values or {}):
-                        source = 'session'
-                    else:
-                        source = 'db'
-                
-                form_fields.append({
-                    'name': stable_key,
-                    'label': field_dict.get('label', stable_key),
-                    'field_type': field_dict.get('field_type', 'text'),
-                    'value': final_value,
-                    'required': field_dict.get('required', False),
-                    'options': field_dict.get('options', []),
-                    'matched_profile_key': matched_profile_key,
-                    'source': source
-                })
-                
-                # Store in pre_filled_values with stable key
-                if final_value:
-                    pre_filled_values[stable_key] = final_value
-        
-        print(f"[ConfirmData] Matched {matched_count}/{len(form_fields)} fields from DB/session")
-        
-        # Save merged values back to session
-        session.pre_filled_values = pre_filled_values
-        
-        # Compute missing required fields
-        scraped_form_dict_for_missing = (
+        # But first validate session pre_filled_values too
+        session_values = {}
+        if session.pre_filled_values:
+            for k, v in session.pre_filled_values.items():
+                safe_val, warning = sanitize_autofill_value(k, "text", v)
+                if safe_val:
+                    session_values[k] = safe_val
+                if warning:
+                    profile_warnings.append(warning)
+
+        merged_profile = {**db_profile, **session_values}
+        print(f"[ConfirmData] Merged profile: {len(merged_profile)} keys")
+
+        # ── Step 2: Map profile to form fields ────────────────────────────
+        scraped_form_dict = (
             session.scraped_form.model_dump()
             if hasattr(session.scraped_form, "model_dump")
             else session.scraped_form
-        ) if session.scraped_form else {}
-        
-        missing_required = compute_missing_required_fields(
-            scraped_form_dict_for_missing,
-            pre_filled_values
         )
-        
-        print(f"[ConfirmData] Missing required fields: {len(missing_required)}")
-        
-        # Update session state
+        fields = scraped_form_dict.get('fields', [])
+
+        canonical_fields = []
+        editable_fields = []
+        pre_filled_values = {}
+        matched_count = 0
+
+        for idx, field in enumerate(fields):
+            field_dict = field if isinstance(field, dict) else field.model_dump()
+            stable_key = compute_stable_field_key(field_dict)
+
+            # Infer better label
+            improved_label = infer_semantic_label(field_dict)
+
+            # Match profile value
+            matched_profile_key, matched_value = match_profile_value_to_field(
+                field_dict, merged_profile
+            )
+
+            # Determine source and final value
+            source = 'none'
+            final_value = ''
+            value_warning = None
+
+            if matched_value is not None:
+                # Sanitize the matched value
+                safe_val, value_warning = sanitize_autofill_value(
+                    improved_label,
+                    field_dict.get('field_type', 'text'),
+                    str(matched_value)
+                )
+                if safe_val:
+                    final_value = safe_val
+                    matched_count += 1
+                    source = 'session' if stable_key in session_values else 'db'
+                if value_warning:
+                    profile_warnings.append(value_warning)
+
+            # Normalize options
+            raw_options = field_dict.get('options', [])
+            normalized_options = []
+            for opt in raw_options:
+                if isinstance(opt, dict):
+                    normalized_options.append({
+                        "label": opt.get("label", opt.get("value", "")),
+                        "value": opt.get("value", opt.get("label", ""))
+                    })
+                else:
+                    normalized_options.append({"label": str(opt), "value": str(opt)})
+
+            field_item = {
+                'key': stable_key,
+                'name': field_dict.get('name', ''),
+                'label': improved_label,
+                'field_type': field_dict.get('field_type', 'text'),
+                'value': final_value,
+                'required': field_dict.get('required', False),
+                'options': normalized_options,
+                'matched_profile_key': matched_profile_key,
+                'source': source,
+                'order': idx,
+                'section': field_dict.get('section', ''),
+                'placeholder': field_dict.get('placeholder', ''),
+            }
+
+            if final_value:
+                canonical_fields.append(field_item)
+                pre_filled_values[stable_key] = final_value
+            else:
+                editable_fields.append(field_item)
+
+        print(f"[ConfirmData] Matched {matched_count}/{len(fields)} fields")
+        print(f"[ConfirmData] Canonical: {len(canonical_fields)}, Editable: {len(editable_fields)}")
+
+        # ── Step 3: Compute missing required fields ───────────────────────
+        missing_required = compute_missing_required_fields(
+            scraped_form_dict, pre_filled_values
+        )
+        print(f"[ConfirmData] Missing required: {len(missing_required)}")
+
+        # ── Step 4: File requirements + document matching ─────────────────
+        file_fields = [f for f in fields if (f.get('field_type') if isinstance(f, dict) else '') == 'file']
+        file_requirements = []
+        user_documents = []
+
+        if session.user_id and file_fields:
+            try:
+                from db.mongo import get_db
+                db = await get_db()
+                if db is not None:
+                    cursor = db.physical_documents.find({
+                        "user_id": session.user_id,
+                        "is_active": True,
+                        "is_deleted": {"$ne": True}
+                    })
+                    user_documents = await cursor.to_list(length=100)
+            except Exception as e:
+                print(f"[ConfirmData] Could not fetch physical documents: {e}")
+
+        for f in file_fields:
+            f_dict = f if isinstance(f, dict) else f.model_dump() if hasattr(f, 'model_dump') else {}
+            key = f_dict.get("name") or f_dict.get("id_attr") or f_dict.get("label", "file_upload")
+            label = infer_semantic_label(f_dict)
+            required = f_dict.get("required", False)
+            accept = f_dict.get("accept", "")
+            multiple = f_dict.get("multiple", False)
+
+            match = match_user_document_to_field(label, accept, user_documents) if user_documents else None
+
+            req = {
+                "key": key,
+                "label": label,
+                "required": required,
+                "accept": accept,
+                "multiple": multiple,
+                "status": "matched" if match else ("missing" if required else "optional"),
+                "matched_document": None,
+            }
+            if match:
+                req["matched_document"] = {
+                    "doc_id": match.get("doc_id"),
+                    "doc_label": match.get("doc_label"),
+                    "stored_filename": match.get("stored_filename"),
+                }
+            file_requirements.append(req)
+
+        # ── Step 5: Build blockers & warnings ─────────────────────────────
+        blockers, warnings = build_review_blockers_and_warnings(
+            canonical_fields + editable_fields,
+            missing_required,
+            file_requirements,
+            profile_warnings,
+        )
+
+        # ── Step 6: Determine status & ready_for_execution ────────────────
+        # Rules (never contradict):
+        # - missing_required non-empty → awaiting_confirmation, false
+        # - blockers non-empty → awaiting_confirmation, false
+        # - awaiting user review → awaiting_confirmation, false
+        # ready_for_execution is ONLY true after user explicitly confirms via POST /confirm
+        status = "awaiting_confirmation"
+        ready_for_execution = False
+
+        if blockers or missing_required:
+            status = "awaiting_confirmation"
+            ready_for_execution = False
+        else:
+            # No blockers, but still awaiting user review
+            status = "awaiting_confirmation"
+            ready_for_execution = False
+
+        print(f"[ConfirmData] Status: {status}, ready_for_execution: {ready_for_execution}")
+        print(f"[ConfirmData] Blockers: {len(blockers)}, Warnings: {len(warnings)}")
+        print(f"[ConfirmData] Response keys: session_id, url, status, ready_for_execution, "
+              f"canonical_fields({len(canonical_fields)}), editable_fields({len(editable_fields)}), "
+              f"missing_required_fields({len(missing_required)}), file_requirements({len(file_requirements)}), "
+              f"blockers({len(blockers)}), warnings({len(warnings)})")
+
+        # ── Step 7: Save to session ───────────────────────────────────────
+        session.pre_filled_values = pre_filled_values
         session.missing_fields = missing_required
+        session.file_requirements = file_requirements
+        session.blockers = blockers
+        session.ready_for_execution = ready_for_execution
         session.status = "awaiting_confirmation"
         await session_store.save(session)
-        
+
+        # ── Step 8: Build response ────────────────────────────────────────
+        # Build legacy form_fields for backward compat
+        all_fields_legacy = []
+        for f in canonical_fields + editable_fields:
+            all_fields_legacy.append({
+                'name': f['key'],
+                'label': f['label'],
+                'field_type': f['field_type'],
+                'value': f['value'],
+                'required': f['required'],
+                'options': f['options'],
+                'matched_profile_key': f.get('matched_profile_key'),
+                'source': f['source'],
+            })
+
+        # Split editable fields into required and optional
+        editable_required_fields = [f for f in editable_fields if f.get('required')]
+        editable_optional_fields = [f for f in editable_fields if not f.get('required')]
+
         return {
             "success": True,
             "data": {
                 "session_id": session_id,
                 "url": session.url,
-                "form_fields": form_fields,
-                "pre_filled_values": pre_filled_values,
+                "page_title": scraped_form_dict.get('page_title', ''),
+                "status": status,
+                "ready_for_execution": ready_for_execution,
+                "summary": {
+                    "prefilled_count": len(canonical_fields),
+                    "missing_required_count": len(missing_required),
+                    "optional_unfilled_count": len(editable_optional_fields),
+                    "total_fields": len(fields),
+                },
+                "blockers": blockers,
+                "canonical_fields": canonical_fields,
+                "editable_fields": editable_fields,
+                "editable_required_fields": editable_required_fields,
+                "editable_optional_fields": editable_optional_fields,
                 "missing_required_fields": missing_required,
-                "can_proceed": True,
-                "status": "awaiting_confirmation"
+                "file_requirements": file_requirements,
+                "pre_filled_values": pre_filled_values,
+                "proposed_profile_updates": [],
+                "warnings": warnings,
+                # DEPRECATED keys — remove after frontend migration
+                "form_fields": all_fields_legacy,
+                "can_proceed": ready_for_execution,
+                # Legacy "fields" key for confirm_routes compat
+                "fields": [
+                    {**f, 'key': f['key']}
+                    for f in canonical_fields + editable_fields
+                ],
             }
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
         import traceback
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Failed to get confirmation data: {str(e)}")
+        print(f"[ConfirmData] ERROR: {e}")
+        # Return error shape instead of 500 — frontend can show fallback
+        return {
+            "success": False,
+            "data": {
+                "session_id": session_id,
+                "url": "",
+                "page_title": "",
+                "status": "error",
+                "ready_for_execution": False,
+                "blockers": [f"Backend error: {str(e)}"],
+                "canonical_fields": [],
+                "editable_fields": [],
+                "missing_required_fields": [],
+                "file_requirements": [],
+                "pre_filled_values": {},
+                "proposed_profile_updates": [],
+                "warnings": [],
+                "form_fields": [],
+                "can_proceed": False,
+                "fields": [],
+            }
+        }
+
+
+@router.post("/sessions/{session_id}/confirm-data")
+async def submit_inline_field_values(session_id: str, payload: dict):
+    """
+    Accept inline field value updates from the confirmation screen.
+    
+    This endpoint lets users fill missing required fields directly in the
+    review UI without leaving the page. Optionally persists safe fields
+    to the canonical user profile for future autofill.
+
+    Request payload:
+        {
+            "field_values": {"middle_name": "Kumar", "email": "test@test.com", "password": "abc123"},
+            "persist_to_profile": {"email": true, "middle_name": true}
+        }
+
+    Rules:
+    - All field_values are stored in session.pre_filled_values
+    - Only non-sensitive fields marked in persist_to_profile are saved to user_profiles
+    - Password/OTP/secret fields are session-only
+    - Returns the same shape as GET /confirm-data (so frontend can refresh)
+    """
+    try:
+        from utils.field_validation import sanitize_autofill_value
+        from utils.generic_mapper import compute_missing_required_fields
+        from utils.profile_normalizer import (
+            is_sensitive_field,
+            route_flat_fields_to_sections,
+        )
+
+        session = await session_store.load(session_id)
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+        field_values = payload.get("field_values", {})
+        persist_flags = payload.get("persist_to_profile", {})
+
+        if not isinstance(field_values, dict) or not field_values:
+            raise HTTPException(status_code=400, detail="field_values must be a non-empty dict")
+
+        print(f"[ConfirmData POST] Received {len(field_values)} field values for session {session_id}")
+
+        # ── Step 1: Sanitize all incoming values ──
+        clean_values = {}
+        rejected = []
+        sensitive_keys = []
+
+        for key, val in field_values.items():
+            if is_sensitive_field(key):
+                sensitive_keys.append(key)
+                # Still store in session, just don't log the value
+                clean_values[key] = str(val).strip() if val else ""
+                print(f"[ConfirmData POST] Sensitive field '{key}' accepted (session-only)")
+                continue
+
+            safe_val, warning = sanitize_autofill_value(key, "text", val)
+            if safe_val:
+                clean_values[key] = safe_val
+            else:
+                rejected.append(f"Field '{key}': {warning or 'empty value'}")
+
+        print(f"[ConfirmData POST] Accepted: {len(clean_values)}, Rejected: {len(rejected)}, Sensitive: {len(sensitive_keys)}")
+
+        # ── Step 2: Update session pre_filled_values ──
+        if not session.pre_filled_values:
+            session.pre_filled_values = {}
+        session.pre_filled_values.update(clean_values)
+
+        # ── Step 3: Persist non-sensitive fields to user profile ──
+        persisted_fields = []
+        if session.user_id and persist_flags:
+            fields_to_persist = {}
+            for key, should_persist in persist_flags.items():
+                if not should_persist:
+                    continue
+                if is_sensitive_field(key):
+                    print(f"[ConfirmData POST] BLOCKED: '{key}' is sensitive, not persisting to profile")
+                    continue
+                if key in clean_values:
+                    fields_to_persist[key] = clean_values[key]
+
+            if fields_to_persist:
+                try:
+                    # Route flat fields to correct profile sections
+                    sectioned = route_flat_fields_to_sections(fields_to_persist)
+
+                    from db.mongo import get_db
+                    from utils.encryption import encrypt_dict_fields, ENCRYPTED_BASIC_FIELDS, ENCRYPTED_CONTACT_FIELDS, ENCRYPTED_IDENTITY_FIELDS
+
+                    db = await get_db()
+                    if db is not None:
+                        update_ops = {}
+                        section_encryption = {
+                            "basic_info": ENCRYPTED_BASIC_FIELDS,
+                            "contact": ENCRYPTED_CONTACT_FIELDS,
+                            "identity": ENCRYPTED_IDENTITY_FIELDS,
+                        }
+                        for section_name, section_data in sectioned.items():
+                            if not section_data:
+                                continue
+                            # Encrypt if needed
+                            enc_fields = section_encryption.get(section_name, [])
+                            if enc_fields:
+                                encrypted = encrypt_dict_fields(section_data, session.user_id, enc_fields)
+                            else:
+                                encrypted = section_data
+
+                            for k, v in encrypted.items():
+                                update_ops[f"{section_name}.{k}"] = v
+                                persisted_fields.append(f"{section_name}.{k}")
+
+                        if update_ops:
+                            from datetime import datetime
+                            update_ops["updated_at"] = datetime.utcnow()
+                            await db.user_profiles.update_one(
+                                {"user_id": session.user_id},
+                                {"$set": update_ops},
+                                upsert=True
+                            )
+                            print(f"[ConfirmData POST] Persisted {len(persisted_fields)} fields to profile")
+                except Exception as e:
+                    print(f"[ConfirmData POST] Profile persistence error: {e}")
+
+        # ── Step 4: Recompute missing required fields ──
+        scraped_form_dict = (
+            session.scraped_form.model_dump()
+            if hasattr(session.scraped_form, "model_dump")
+            else session.scraped_form
+        ) if session.scraped_form else {}
+
+        missing_required = compute_missing_required_fields(
+            scraped_form_dict, session.pre_filled_values
+        )
+        session.missing_fields = missing_required
+
+        # ── Step 5: Update session status ──
+        if missing_required:
+            session.status = "awaiting_confirmation"
+            session.ready_for_execution = False
+        else:
+            session.status = "awaiting_confirmation"  # Still needs explicit confirm
+            session.ready_for_execution = False
+
+        await session_store.save(session)
+
+        print(f"[ConfirmData POST] Status: {session.status}, Missing: {len(missing_required)}")
+
+        # ── Step 6: Return updated payload ──
+        return {
+            "success": True,
+            "data": {
+                "session_id": session_id,
+                "status": session.status,
+                "ready_for_execution": session.ready_for_execution,
+                "fields_accepted": len(clean_values),
+                "fields_persisted": persisted_fields,
+                "fields_rejected": rejected,
+                "sensitive_fields": sensitive_keys,
+                "missing_required_fields": missing_required,
+                "message": f"Updated {len(clean_values)} fields, {len(missing_required)} still missing",
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to update fields: {str(e)}")
 
 
 @router.post("/sessions/{session_id}/confirm")
@@ -668,16 +1038,30 @@ async def confirm_and_update_data(session_id: str, payload: dict):
         
         print(f"[Confirm] User confirmed {len(confirmed_data)} fields")
         print(f"[Confirm] Confirmed keys: {list(confirmed_data.keys())}")
+
+        # Sanitize incoming confirmed values
+        from utils.field_validation import sanitize_autofill_value
+        clean_confirmed = {}
+        confirm_warnings = []
+        for k, v in confirmed_data.items():
+            safe_val, warning = sanitize_autofill_value(k, "text", v)
+            if safe_val:
+                clean_confirmed[k] = safe_val
+            if warning:
+                confirm_warnings.append(warning)
+                print(f"[Confirm] Rejected confirmed value for '{k}': {warning}")
+
+        print(f"[Confirm] Accepted {len(clean_confirmed)}/{len(confirmed_data)} confirmed values")
         
         # Merge into session pre_filled_values
         if not hasattr(session, 'pre_filled_values') or not session.pre_filled_values:
             session.pre_filled_values = {}
-        session.pre_filled_values.update(confirmed_data)
+        session.pre_filled_values.update(clean_confirmed)
         
         # Persist to DB for future use
-        if session.user_id and confirmed_data:
-            await upsert_basic_user_profile(session.user_id, confirmed_data)
-            print(f"[Confirm] Persisted {len(confirmed_data)} fields to DB")
+        if session.user_id and clean_confirmed:
+            await upsert_basic_user_profile(session.user_id, clean_confirmed)
+            print(f"[Confirm] Persisted {len(clean_confirmed)} fields to DB")
         
         # Recompute missing required fields
         scraped_form_dict_for_missing = (
@@ -694,24 +1078,33 @@ async def confirm_and_update_data(session_id: str, payload: dict):
         session.missing_fields = missing_required
         
         # Update status based on missing fields
+        # Rules: never return ready_for_execution=true with missing fields
         if missing_required:
             session.status = "awaiting_confirmation"
+            session.ready_for_execution = False
             message = f"Some required fields are still missing ({len(missing_required)})"
+            print(f"[Confirm] Status: awaiting_confirmation, ready_for_execution: False")
         else:
             session.status = "confirmed"
+            session.ready_for_execution = True
             message = "Data confirmed. Ready for autofill."
+            print(f"[Confirm] Status: confirmed, ready_for_execution: True")
         
         await session_store.save(session)
         
-        print(f"[Confirm] Status: {session.status}, Missing: {len(missing_required)}")
+        print(f"[Confirm] Final status: {session.status}, Missing: {len(missing_required)}")
         
         return {
             "success": True,
             "data": {
                 "session_id": session_id,
                 "status": session.status,
+                "ready_for_execution": session.ready_for_execution,
                 "missing_required_fields": missing_required,
-                "message": message
+                "warnings": confirm_warnings,
+                "message": message,
+                # DEPRECATED
+                "can_proceed": session.ready_for_execution,
             }
         }
         

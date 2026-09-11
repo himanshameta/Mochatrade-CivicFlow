@@ -165,6 +165,9 @@ class UserDB(BaseModel):
 
 class BasicInfo(BaseModel):
     full_name: str = ""          # AES-256 encrypted in MongoDB
+    first_name: str = ""         # Derived from full_name or set directly
+    middle_name: str = ""        # Derived from full_name or set directly
+    last_name: str = ""          # Derived from full_name or set directly
     dob: str = ""                # AES-256 encrypted in MongoDB  (YYYY-MM-DD)
     gender: str = ""
     address: str = ""            # AES-256 encrypted in MongoDB
@@ -172,6 +175,8 @@ class BasicInfo(BaseModel):
     state: str = ""
     pincode: str = ""
     nationality: str = "Indian"
+    father_name: str = ""
+    mother_name: str = ""
 
 
 class ContactInfo(BaseModel):
@@ -179,7 +184,10 @@ class ContactInfo(BaseModel):
     phone: str = ""              # AES-256 encrypted in MongoDB
     alternate_phone: str = ""
     address: Optional[str] = ""  # Frontend sends this field
+    city: str = ""               # Also in BasicInfo for legacy compat
+    state: str = ""              # Also in BasicInfo for legacy compat
     pincode: Optional[str] = ""  # Frontend sends this field
+    country: str = "India"
 
 
 class IdentityInfo(BaseModel):

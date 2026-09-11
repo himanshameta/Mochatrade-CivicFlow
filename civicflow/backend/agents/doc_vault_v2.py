@@ -167,7 +167,7 @@ class DocVaultAgent:
                 normalized = {k: v for k, v in extracted.items() 
                              if k not in ["extraction_success", "extraction_engine", "reasoning_used"]}
                 extracted = normalized
-                extracted["extraction_engine"] = "nemotron-llm"
+                extracted["extraction_engine"] = "gpt-oss-120b"
 
             # 5. Cross-validate with existing profile (if available)
             conflicts = await self._cross_validate_with_db(user_id, extracted)

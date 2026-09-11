@@ -5,8 +5,54 @@ Maps user profile data to arbitrary web form fields using semantic matching.
 Works for any form (government, registration, contact, application, etc.)
 """
 import re
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple, Optional, Any
 
+def normalize_mapped_value_for_storage(value: Any) -> str:
+    """
+    Convert mapped field value into a scalar value for session/models/executor.
+    Rules:
+    - if value is None -> ""
+    - if value is str/int/float/bool -> string form
+    - if value is dict and has "value" -> return value["value"]
+    - else if value is dict and has "label" -> return value["label"]
+    - if value is list of dicts -> map each entry to its scalar value
+    - if value is list of scalars -> join depending on target model
+    """
+    if value is None:
+        return ""
+    if isinstance(value, dict):
+        return str(value.get("value", value.get("label", "")))
+    if isinstance(value, list):
+        normalized_list = []
+        for item in value:
+            if isinstance(item, dict):
+                normalized_list.append(str(item.get("value", item.get("label", ""))))
+            else:
+                normalized_list.append(str(item))
+        return ", ".join(normalized_list)
+    return str(value)
+
+
+def normalize_example_value(value: Any) -> str:
+    """
+    Return a user-friendly string for display in UserDataItem.example.
+    For dict option -> use label first, then value
+    For list -> comma-separated string
+    For scalar -> string(value)
+    """
+    if value is None:
+        return ""
+    if isinstance(value, dict):
+        return str(value.get("label", value.get("value", "")))
+    if isinstance(value, list):
+        normalized_list = []
+        for item in value:
+            if isinstance(item, dict):
+                normalized_list.append(str(item.get("label", item.get("value", ""))))
+            else:
+                normalized_list.append(str(item))
+        return ", ".join(normalized_list)
+    return str(value)
 
 def canonicalize_key(s: str) -> str:
     """Normalize field key: lowercase, strip, collapse underscores."""
@@ -24,6 +70,7 @@ def get_alias_map() -> Dict[str, List[str]]:
     return {
         "name": ["name", "full_name", "fullname", "applicant_name", "candidate_name"],
         "first_name": ["first_name", "firstname", "given_name", "givenname"],
+        "middle_name": ["middle_name", "middlename", "middle"],
         "last_name": ["last_name", "lastname", "surname", "family_name"],
         "email": ["email", "email_id", "emailaddress", "email_address", "mail"],
         "phone": ["phone", "mobile", "mobile_number", "mobileno", "phone_number", "contact", "tel"],
@@ -37,7 +84,8 @@ def get_alias_map() -> Dict[str, List[str]]:
         "pan_number": ["pan", "pan_number", "pan_no", "pannumber"],
         "aadhaar_last4": ["aadhaar", "aadhaar_number", "aadhaar_no", "aadhaar_last4"],
         "passport_number": ["passport", "passport_number", "passport_no"],
-        "father_name": ["father_name", "fathers_name", "father"]
+        "father_name": ["father_name", "fathers_name", "father"],
+        "mother_name": ["mother_name", "mothers_name", "mother"],
     }
 
 
@@ -51,17 +99,32 @@ def build_reverse_alias_map() -> Dict[str, str]:
     return reverse
 
 
-def split_full_name(name: str) -> Tuple[str, str]:
-    """Split full name into first and last name."""
+def split_full_name(name: str) -> Dict[str, str]:
+    """Split full name into first, middle, and last name.
+    
+    Rules:
+    - 1 token:  first_name only
+    - 2 tokens: first_name + last_name
+    - 3+ tokens: first_name + middle_name + last_name
+    
+    Returns dict with first_name, middle_name, last_name keys.
+    Also returns a (first, last) tuple via indexing for backward compat.
+    """
     if not name:
-        return "", ""
+        return {"first_name": "", "middle_name": "", "last_name": ""}
     parts = str(name).strip().split()
     if len(parts) == 0:
-        return "", ""
+        return {"first_name": "", "middle_name": "", "last_name": ""}
     elif len(parts) == 1:
-        return parts[0], ""
+        return {"first_name": parts[0], "middle_name": "", "last_name": ""}
+    elif len(parts) == 2:
+        return {"first_name": parts[0], "middle_name": "", "last_name": parts[1]}
     else:
-        return parts[0], " ".join(parts[1:])
+        return {
+            "first_name": parts[0],
+            "middle_name": " ".join(parts[1:-1]),
+            "last_name": parts[-1],
+        }
 
 
 def normalize_phone(phone: str) -> str:
@@ -236,16 +299,25 @@ def match_profile_value_to_field(field_dict: Dict, profile: Dict) -> Tuple[Optio
         canonical = reverse_map.get(candidate)
         
         if canonical == 'first_name' and 'name' in profile:
-            first, _ = split_full_name(profile['name'])
+            name_parts = split_full_name(profile['name'])
+            first = name_parts["first_name"]
             return 'name', first if first else None
         
+        if canonical == 'middle_name' and 'name' in profile:
+            name_parts = split_full_name(profile['name'])
+            middle = name_parts["middle_name"]
+            return 'name', middle if middle else None
+        
         if canonical == 'last_name' and 'name' in profile:
-            _, last = split_full_name(profile['name'])
+            name_parts = split_full_name(profile['name'])
+            last = name_parts["last_name"]
             return 'name', last if last else None
         
         if canonical == 'name':
             if 'first_name' in profile and 'last_name' in profile:
-                full = f"{profile['first_name']} {profile['last_name']}".strip()
+                middle = profile.get('middle_name', '')
+                parts = [profile['first_name'], middle, profile['last_name']]
+                full = " ".join(p for p in parts if p).strip()
                 return 'name', full
             elif 'first_name' in profile:
                 return 'first_name', profile['first_name']
@@ -255,36 +327,62 @@ def match_profile_value_to_field(field_dict: Dict, profile: Dict) -> Tuple[Optio
 
 async def get_flat_user_profile(user_id: str) -> Dict:
     """
-    Fetch and flatten user profile from MongoDB.
-    Includes basic_info, documents OCR data, and any extra fields.
+    Fetch, decrypt, and flatten user profile from MongoDB.
+
+    Decrypts AES-256-GCM encrypted fields (full_name, dob, address, phone, pan_number)
+    and validates all values for human readability before returning.
+    Rejects ciphertext-like or non-readable values silently.
     """
     try:
         from db.mongo import get_db
-        
+        from utils.encryption import (
+            decrypt_dict_fields,
+            ENCRYPTED_BASIC_FIELDS,
+            ENCRYPTED_CONTACT_FIELDS,
+            ENCRYPTED_IDENTITY_FIELDS,
+        )
+        from utils.field_validation import is_human_readable_field_value
+
         db = await get_db()
         if db is None:
             return {}
-        
+
         profile_doc = await db.user_profiles.find_one({"user_id": user_id})
-        
+
         if not profile_doc:
             return {}
-        
+
         flat_profile = {}
-        
-        # Merge basic_info
+
+        # Decrypt and merge basic_info
         if 'basic_info' in profile_doc:
             basic = profile_doc['basic_info']
             if isinstance(basic, dict):
-                flat_profile.update(basic)
-        
-        # Merge contact info
+                decrypted = decrypt_dict_fields(basic, user_id, ENCRYPTED_BASIC_FIELDS)
+                flat_profile.update(decrypted)
+                print(f"[FieldMapper] Decrypted basic_info fields: {list(decrypted.keys())}")
+
+        # Decrypt and merge contact info
         if 'contact' in profile_doc:
             contact = profile_doc['contact']
             if isinstance(contact, dict):
-                flat_profile.update(contact)
-        
-        # Merge uploaded_documents OCR fields
+                decrypted = decrypt_dict_fields(contact, user_id, ENCRYPTED_CONTACT_FIELDS)
+                flat_profile.update(decrypted)
+
+        # Decrypt and merge identity info
+        if 'identity' in profile_doc:
+            identity = profile_doc['identity']
+            if isinstance(identity, dict):
+                decrypted = decrypt_dict_fields(identity, user_id, ENCRYPTED_IDENTITY_FIELDS)
+                flat_profile.update(decrypted)
+
+        # Education (not encrypted)
+        if 'education' in profile_doc:
+            education = profile_doc['education']
+            if isinstance(education, dict):
+                flat_profile.update(education)
+
+        # Merge uploaded_documents OCR fields — only if human-readable
         if 'uploaded_documents' in profile_doc:
             docs = profile_doc['uploaded_documents']
             if isinstance(docs, list):
@@ -292,17 +390,38 @@ async def get_flat_user_profile(user_id: str) -> Dict:
                     if isinstance(doc, dict) and 'ocr_extracted_fields' in doc:
                         ocr_fields = doc['ocr_extracted_fields']
                         if isinstance(ocr_fields, dict):
-                            flat_profile.update(ocr_fields)
-        
+                            # Attempt decryption of OCR fields
+                            try:
+                                decrypted_ocr = decrypt_dict_fields(
+                                    ocr_fields, user_id, list(ocr_fields.keys())
+                                )
+                            except Exception:
+                                decrypted_ocr = ocr_fields
+                            for key, val in decrypted_ocr.items():
+                                if is_human_readable_field_value(val, "text", key):
+                                    flat_profile[key] = val
+                                else:
+                                    print(f"[FieldMapper] Rejected OCR field '{key}': not human-readable")
+
+        # Filter out any remaining ciphertext-like values
+        clean_profile = {}
+        for key, val in flat_profile.items():
+            if val and is_human_readable_field_value(val, "text", key):
+                clean_profile[key] = val
+            elif val:
+                print(f"[FieldMapper] Rejected field '{key}': value failed readability check")
+
         # Normalize
-        normalized = normalize_profile_data(flat_profile)
-        
-        print(f"[FieldMapper] Loaded profile keys: {list(normalized.keys())}")
-        
+        normalized = normalize_profile_data(clean_profile)
+
+        print(f"[FieldMapper] Loaded {len(normalized)} clean profile keys: {list(normalized.keys())}")
+
         return normalized
-        
+
     except Exception as e:
         print(f"[FieldMapper] Error loading profile: {e}")
+        import traceback
+        traceback.print_exc()
         return {}
 
 
@@ -344,14 +463,15 @@ def map_profile_to_fields(fields_list: List[Dict], profile: Dict) -> Tuple[Dict,
         matched_key, matched_value = match_profile_value_to_field(field_dict, profile)
         stable_key = compute_stable_field_key(field_dict)
         
-        if matched_value:
-            pre_filled_values[stable_key] = matched_value
+        if matched_value is not None and matched_value != "":
+            pre_filled_values[stable_key] = normalize_mapped_value_for_storage(matched_value)
         elif field_dict.get('required'):
             missing_fields.append(field_dict.get('label') or stable_key)
             
     return pre_filled_values, missing_fields
 
 __all__ = [
+    "normalize_mapped_value_for_storage", "normalize_example_value",
     "canonicalize_key", "get_alias_map", "build_reverse_alias_map",
     "split_full_name", "normalize_phone", "normalize_email", "normalize_gender",
     "normalize_pincode", "normalize_profile_data", "get_candidate_field_keys",

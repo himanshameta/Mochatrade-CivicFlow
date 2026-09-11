@@ -19,7 +19,7 @@ class LLMClient:
     def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key or os.getenv("OPENROUTER_API_KEY", "")
         self.base_url = "https://openrouter.ai/api/v1/chat/completions"
-        self.model = os.getenv("OPENROUTER_MODEL", "nvidia/nemotron-3-ultra-550b-a55b:free")
+        self.model = os.getenv("OPENROUTER_MODEL", "openai/gpt-oss-120b:free")
         self.timeout = 30.0
         
     async def generate_content(

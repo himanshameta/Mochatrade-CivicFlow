@@ -22,6 +22,8 @@ class FormField(BaseModel):
     selector: str
     selector_priority: list[str] = Field(default_factory=list)  # Multiple selector strategies
     section: str = ""
+    accept: Optional[str] = None
+    multiple: bool = False
     
     @field_validator('options', mode='before')
     @classmethod
@@ -92,6 +94,11 @@ class UserSession(BaseModel):
     user_profile: dict = Field(default_factory=dict)  # Flattened profile from DB
     pre_filled_values: dict = Field(default_factory=dict)  # {field_name: value}
     missing_fields: list = Field(default_factory=list)  # [field_label] for required missing fields
+    file_requirements: list = Field(default_factory=list) # List of dicts representing file requirements
+    matched_documents: list = Field(default_factory=list) # List of dicts for matched user documents
+    selected_documents: dict = Field(default_factory=dict)  # {field_name: [document_id or temp_file_path]}
+    blockers: list[str] = Field(default_factory=list)
+    ready_for_execution: bool = False
     generated_script: Optional[str] = None
     script_path: Optional[str] = None
     status: Literal["created", "scraped", "collecting", "needs_user_input", "awaiting_confirmation",

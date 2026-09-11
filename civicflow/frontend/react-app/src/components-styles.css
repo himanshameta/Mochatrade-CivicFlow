@@ -409,3 +409,85 @@
     grid-template-columns: repeat(2, 1fr);
   }
 }
+
+/* ── Modal styles ────────────────────────────── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  animation: fadeIn 0.15s ease;
+}
+
+.modal-content {
+  background: var(--card-bg, #1e293b);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  padding: 1.5rem;
+  width: 90%;
+  max-width: 520px;
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.3);
+  animation: slideUp 0.2s ease;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.modal-header h3 {
+  margin: 0;
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  color: #6b7280;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+}
+
+.modal-close:hover {
+  color: #ef4444;
+}
+
+/* ── Drop zone ────────────────────────────── */
+.drop-zone {
+  border: 2px dashed rgba(134, 184, 154, 0.4);
+  border-radius: 12px;
+  padding: 2rem;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  color: #6b7280;
+}
+
+.drop-zone:hover,
+.drop-zone-active {
+  border-color: var(--sage-green, #86b89a);
+  background: rgba(134, 184, 154, 0.08);
+  color: var(--sage-green-dark, #4a8a64);
+}
+
+@keyframes fadeIn {
+  from { opacity: 0 }
+  to { opacity: 1 }
+}
+
+@keyframes slideUp {
+  from { transform: translateY(16px); opacity: 0 }
+  to { transform: translateY(0); opacity: 1 }
+}
+
+.btn-sm {
+  font-size: 0.8rem;
+  padding: 0.3rem 0.75rem;
+}

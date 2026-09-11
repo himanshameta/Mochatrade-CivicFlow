@@ -124,6 +124,8 @@ def score_form(form: Tag) -> int:
             score += 3
         elif input_type == "tel":
             score += 2
+        elif input_type == "file":
+            score += 2
         elif tag_name == "textarea":
             score += 2
         elif tag_name == "select" or input_type in ["radio", "checkbox"]:
@@ -431,6 +433,9 @@ async def scraper(html: str, url: str) -> Optional[dict]:
             placeholder = element.get("placeholder", "")
             required = element.has_attr("required") or element.get("required") == "required"
             
+            accept = element.get("accept", "") if field_type == "file" else None
+            multiple = element.has_attr("multiple") or element.get("multiple") == "multiple" if field_type == "file" else False
+            
             # Get label text — try multiple strategies
             label_text = get_label_for_element(element, soup)
             
@@ -491,6 +496,8 @@ async def scraper(html: str, url: str) -> Optional[dict]:
                 "selector": selector,
                 "selector_priority": selector_priority,
                 "section": get_section_name(element),
+                "accept": accept,
+                "multiple": multiple,
                 "order": len(fields)  # Preserve order
             })
         

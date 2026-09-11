@@ -73,11 +73,32 @@ const ProfileSetup = ({ user, showToast }) => {
     setLoading(true)
 
     try {
-      await axios.post('/auth/profile', profileData)
-      showToast('Profile updated successfully!', 'success')
-      navigate('/dashboard')
+      const response = await axios.post('/auth/profile', profileData)
+      const data = response.data
+
+      if (data.success) {
+        const fieldCount = data.data?.fields_written?.length || 0
+        const warningCount = data.data?.warnings?.length || 0
+        let msg = `Profile saved (${fieldCount} fields)`
+        if (warningCount > 0) {
+          msg += ` — ${warningCount} warning(s)`
+        }
+        showToast(msg, 'success')
+        navigate('/dashboard')
+      } else {
+        // success: false from backend (validation errors)
+        const errors = data.errors || [data.message || 'Unknown error']
+        showToast(`Profile update failed: ${errors.join(', ')}`, 'error')
+      }
     } catch (error) {
-      showToast(error.response?.data?.detail || 'Failed to update profile', 'error')
+      // 422 or other HTTP errors
+      const detail = error.response?.data?.detail
+      if (detail && typeof detail === 'object') {
+        const errors = detail.errors || [detail.message || 'Update failed']
+        showToast(`Profile error: ${errors.join(', ')}`, 'error')
+      } else {
+        showToast(error.response?.data?.detail || 'Failed to update profile', 'error')
+      }
     } finally {
       setLoading(false)
     }

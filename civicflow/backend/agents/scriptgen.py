@@ -24,10 +24,62 @@ async def scriptgen(scraped_form, session_id: str, pre_filled_values: dict = Non
             'session_id': session_id,
             'url': scraped_form.get('url') if isinstance(scraped_form, dict) else scraped_form.url,
             'scraped_form': scraped_form if isinstance(scraped_form, dict) else scraped_form.model_dump(),
-            'pre_filled_values': pre_filled_values or {}
+            'pre_filled_values': pre_filled_values or {},
+            'selected_documents': {},
+            'file_requirements': [],
         }
         
+        # Load selected_documents and file_requirements from session
+        try:
+            from models.session_models import SessionStore
+            import asyncio
+            store = SessionStore()
+            session = await store.load(session_id)
+            if session:
+                session_dict['selected_documents'] = session.selected_documents or {}
+                session_dict['file_requirements'] = session.file_requirements or []
+                
+                # Resolve document_id → storage_path for each selected document
+                if session_dict['selected_documents']:
+                    from db.vault_db import get_document as vault_get
+                    for field_key, doc_refs in session_dict['selected_documents'].items():
+                        if not doc_refs:
+                            continue
+                        ref = doc_refs[0] if isinstance(doc_refs, list) else doc_refs
+                        # Skip if already a path
+                        if os.sep in str(ref) or '/' in str(ref):
+                            continue
+                        # Resolve document_id to path
+                        doc = await vault_get(ref, session.user_id)
+                        if doc and doc.storage_path:
+                            session_dict['selected_documents'][field_key] = [doc.storage_path]
+                            print(f"[ScriptGen] Resolved {field_key} → {doc.storage_path}")
+        except Exception as e:
+            print(f"[ScriptGen] Could not load session docs: {e}")
+        
         script_content = generate_autofill_script(session_dict, '')
+        
+        # PART 4 & 5: Validate and debug logging
+        try:
+            ast.parse(script_content)
+        except SyntaxError as e:
+            print(f"[ScriptGen] ⚠ Generated script syntax error: {e}")
+            print(f"[ScriptGen] ⚠ Generated script was:\n{script_content}")
+            
+            # PART 7: Add file dump on failure
+            upload_dir = os.getenv("UPLOAD_DIR", "./uploads")
+            scripts_dir = os.path.join(upload_dir, "scripts")
+            os.makedirs(scripts_dir, exist_ok=True)
+            debug_path = os.path.join(scripts_dir, "debug_last_invalid.py")
+            with open(debug_path, "w", encoding="utf-8") as dbg:
+                dbg.write(script_content)
+                
+            raise RuntimeError(f"Generated invalid python: {e}") from e
+            
+        print("[ScriptGen] Script generated successfully. Preview:")
+        for i, line in enumerate(script_content.splitlines(), start=1):
+            if i <= 80:
+                print(f"[ScriptGen][{i:03d}] {line}")
         
         # Save script to file
         upload_dir = os.getenv("UPLOAD_DIR", "./uploads")
@@ -44,6 +96,9 @@ async def scriptgen(scraped_form, session_id: str, pre_filled_values: dict = Non
         
     except Exception as e:
         print(f"[ScriptGen] ⚠ executor_field_handler failed: {e}")
+        # Re-raise to fail properly if it's a syntax error
+        if isinstance(e, RuntimeError) and "Generated invalid python" in str(e):
+            raise e
         print(f"[ScriptGen] Falling back to legacy generation")
     
     # Legacy fallback code below

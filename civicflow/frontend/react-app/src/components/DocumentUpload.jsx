@@ -2,14 +2,26 @@ import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import axios from 'axios'
 
+const CATEGORIES = [
+  { value: 'identity', label: 'Identity (Aadhaar, PAN, Passport, etc.)' },
+  { value: 'address_proof', label: 'Address Proof' },
+  { value: 'education', label: 'Education (Marksheet, Degree)' },
+  { value: 'certificate', label: 'Certificate' },
+  { value: 'photo', label: 'Photo / Photograph' },
+  { value: 'resume', label: 'Resume / CV' },
+  { value: 'financial', label: 'Financial (ITR, Salary Slip)' },
+  { value: 'medical', label: 'Medical' },
+  { value: 'other', label: 'Other' },
+]
+
 const DocumentUpload = ({ user, showToast }) => {
   const navigate = useNavigate()
   const [file, setFile] = useState(null)
-  const [docType, setDocType] = useState('')
+  const [displayName, setDisplayName] = useState('')
+  const [category, setCategory] = useState('')
+  const [subcategory, setSubcategory] = useState('')
+  const [tags, setTags] = useState('')
   const [uploading, setUploading] = useState(false)
-  const [extractedFields, setExtractedFields] = useState(null)
-  const [docId, setDocId] = useState(null)
-  const [correctedFields, setCorrectedFields] = useState({})
 
   const handleFileChange = (e) => {
     const selectedFile = e.target.files[0]
@@ -19,58 +31,34 @@ const DocumentUpload = ({ user, showToast }) => {
         return
       }
       setFile(selectedFile)
+      if (!displayName) setDisplayName(selectedFile.name.replace(/\.[^.]+$/, ''))
     }
   }
 
   const handleUpload = async () => {
-    if (!file || !docType) {
-      showToast('Please select a file and document type', 'warning')
+    if (!file || !displayName.trim() || !category) {
+      showToast('Please fill in file, display name, and category', 'warning')
       return
     }
 
     setUploading(true)
     const formData = new FormData()
     formData.append('file', file)
-    formData.append('doc_type', docType)
-    formData.append('session_id', '')
+    formData.append('display_name', displayName.trim())
+    formData.append('category', category)
+    if (subcategory.trim()) formData.append('subcategory', subcategory.trim())
+    if (tags.trim()) formData.append('tags', tags.trim())
 
     try {
-      const response = await axios.post('/documents/upload', formData, {
+      await axios.post('/documents/vault/upload', formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       })
-
-      const data = response.data.data
-
-      if (data.fallback_mode) {
-        showToast(data.message || 'Document uploaded with limited processing', 'warning')
-        navigate('/documents')
-        return
-      }
-
-      setDocId(data.doc_id)
-      setExtractedFields(data.extracted_fields || {})
-      setCorrectedFields(data.extracted_fields || {})
-      showToast('Document processed successfully!', 'success')
+      showToast('Document uploaded to vault!', 'success')
+      navigate('/documents')
     } catch (error) {
       showToast(error.response?.data?.detail || 'Failed to upload document', 'error')
     } finally {
       setUploading(false)
-    }
-  }
-
-  const handleFieldChange = (key, value) => {
-    setCorrectedFields(prev => ({ ...prev, [key]: value }))
-  }
-
-  const handleConfirm = async () => {
-    try {
-      await axios.post(`/documents/confirm/${docId}`, {
-        corrected_fields: correctedFields
-      })
-      showToast('Document saved to profile!', 'success')
-      navigate('/documents')
-    } catch (error) {
-      showToast(error.response?.data?.detail || 'Failed to save document', 'error')
     }
   }
 
@@ -79,89 +67,47 @@ const DocumentUpload = ({ user, showToast }) => {
       <div className="page-container">
         <div className="page-hero">
           <h2>Upload Document</h2>
-          <p>Extract information from your documents automatically</p>
+          <p>Store documents locally for automatic form filling</p>
         </div>
 
         <div className="glass-card">
-          {!extractedFields ? (
-            <div className="upload-panel">
-              <div className="form-group">
-                <label>Document Type *</label>
-                <select value={docType} onChange={(e) => setDocType(e.target.value)} required>
-                  <option value="">-- Select Document Type --</option>
-                  <option value="aadhaar">Aadhaar Card</option>
-                  <option value="pan">PAN Card</option>
-                  <option value="passport">Passport</option>
-                  <option value="driving_license">Driving License</option>
-                  <option value="voter_id">Voter ID</option>
-                  <option value="bank_statement">Bank Statement</option>
-                  <option value="income_certificate">Income Certificate</option>
-                  <option value="other">Other</option>
-                </select>
-              </div>
-
-              <div className="form-group">
-                <label>Select File *</label>
-                <input
-                  type="file"
-                  onChange={handleFileChange}
-                  accept=".pdf,.jpg,.jpeg,.png"
-                />
-                {file && (
-                  <div className="file-info">
-                    📄 {file.name} ({(file.size / 1024).toFixed(2)} KB)
-                  </div>
-                )}
-              </div>
-
-              <div className="form-actions">
-                <button className="btn btn-outline" onClick={() => navigate('/documents')}>
-                  Cancel
-                </button>
-                <button
-                  className="btn btn-primary"
-                  onClick={handleUpload}
-                  disabled={uploading || !file || !docType}
-                >
-                  {uploading ? 'Processing...' : 'Upload & Extract'}
-                </button>
-              </div>
+          <div className="upload-panel">
+            <div className="form-group">
+              <label>Display Name *</label>
+              <input type="text" value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder="e.g. My Resume 2026, Aadhaar Card" />
             </div>
-          ) : (
-            <div className="extracted-fields-panel">
-              <h3>✅ Extracted Information</h3>
-              <p>Review and correct the extracted data below:</p>
 
-              <div className="form-grid">
-                {Object.entries(extractedFields).map(([key, value]) => (
-                  <div key={key} className="form-group">
-                    <label>{key.replace(/_/g, ' ').toUpperCase()}</label>
-                    <input
-                      type="text"
-                      value={correctedFields[key] || ''}
-                      onChange={(e) => handleFieldChange(key, e.target.value)}
-                    />
-                  </div>
-                ))}
-              </div>
-
-              <div className="form-actions">
-                <button
-                  className="btn btn-outline"
-                  onClick={() => {
-                    setExtractedFields(null)
-                    setDocId(null)
-                    setFile(null)
-                  }}
-                >
-                  Upload Another
-                </button>
-                <button className="btn btn-primary" onClick={handleConfirm}>
-                  Confirm & Save
-                </button>
-              </div>
+            <div className="form-group">
+              <label>Category *</label>
+              <select value={category} onChange={e => setCategory(e.target.value)} required>
+                <option value="">-- Select Category --</option>
+                {CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+              </select>
             </div>
-          )}
+
+            <div className="form-group">
+              <label>Subcategory (optional)</label>
+              <input type="text" value={subcategory} onChange={e => setSubcategory(e.target.value)} placeholder="e.g. electricity bill, passport photo" />
+            </div>
+
+            <div className="form-group">
+              <label>Tags (comma-separated, optional)</label>
+              <input type="text" value={tags} onChange={e => setTags(e.target.value)} placeholder="e.g. 2026, latest, official" />
+            </div>
+
+            <div className="form-group">
+              <label>Select File *</label>
+              <input type="file" onChange={handleFileChange} accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" />
+              {file && <div className="file-info">📄 {file.name} ({(file.size / 1024).toFixed(1)} KB)</div>}
+            </div>
+
+            <div className="form-actions">
+              <button className="btn btn-outline" onClick={() => navigate('/documents')}>Cancel</button>
+              <button className="btn btn-primary" onClick={handleUpload} disabled={uploading || !file || !displayName.trim() || !category}>
+                {uploading ? 'Uploading...' : 'Upload to Vault'}
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>

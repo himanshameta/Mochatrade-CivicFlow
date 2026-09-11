@@ -69,88 +69,126 @@ async def upsert_basic_user_profile(user_id: str, fields: dict):
 async def get_confirmation_data(session_id: str):
     """
     Get normalized form schema for review.
-    
-    Returns form with all fields mapped from user profile.
-    Frontend renders this as a dynamic review form.
+    Returns ConfirmDataPayload with file_requirements populated from vault.
     """
     try:
-        # Load session
         session = await session_store.load(session_id)
         if not session:
             raise HTTPException(status_code=404, detail="Session not found")
         
         if not session.scraped_form:
-            print(f"[ConfirmData] ERROR: scraped_form is None for session {session_id}")
             raise HTTPException(
                 status_code=400,
                 detail="Form has not been scraped yet. Please wait for analysis to complete."
             )
-        
-        print(f"[ConfirmData] scraped_form exists: True")
         
         # Get user profile from DB
         user_profile = {}
         if session.user_id:
             try:
                 user_profile = await get_flat_user_profile(session.user_id)
-                print(f"[ConfirmData] Loaded {len(user_profile)} profile fields for user {session.user_id}")
             except Exception as e:
                 print(f"[ConfirmData] Could not load profile: {e}")
         
-        # Merge with existing session values (session takes priority)
+        # Merge with session values
         if session.pre_filled_values:
             user_profile.update(session.pre_filled_values)
-            print(f"[ConfirmData] Merged with {len(session.pre_filled_values)} session values")
         
-        # Convert scraped_form to dict if needed
         scraped_form_dict = (
             session.scraped_form.model_dump()
             if hasattr(session.scraped_form, "model_dump")
             else session.scraped_form
         )
         
-        print(f"[ConfirmData] scraped_form has {len(scraped_form_dict.get('fields', []))} fields")
-        
         # Map profile to form schema
         review_fields = await map_profile_to_form_schema(scraped_form_dict, user_profile)
         
-        print(f"[ConfirmData] Mapped {len([f for f in review_fields if f.value])} out of {len(review_fields)} fields")
-        
-        # Build pre_filled_values dict for session
+        # Build pre_filled_values and compute missing
         pre_filled_values = {}
+        missing_required = []
+        canonical_fields = []
+        editable_fields = []
+        
         for field in review_fields:
             if field.value:
                 pre_filled_values[field.key] = field.value
+                canonical_fields.append(field)
+            elif field.required:
+                missing_required.append({"name": field.key, "label": field.label, "field_type": field.field_type})
+                editable_fields.append(field)
+            else:
+                editable_fields.append(field)
         
-        # Compute missing required fields
-        missing_required = []
-        for field in review_fields:
-            if field.required and not field.value:
-                missing_required.append(field.key)
+        # Build file requirements from session (populated by orchestrator)
+        from models.review_schema import FileRequirementItem, MatchedSavedDocument
+        file_requirements = []
+        blockers = list(session.blockers) if session.blockers else []
+        
+        for fr in (session.file_requirements or []):
+            matched_saved = []
+            for ms in fr.get("matched_saved_documents", []):
+                matched_saved.append(MatchedSavedDocument(
+                    document_id=ms.get("document_id", ""),
+                    display_name=ms.get("display_name", ""),
+                    category=ms.get("category", "other"),
+                    mime_type=ms.get("mime_type", ""),
+                    score=ms.get("score", 0.0),
+                ))
+            
+            # Check if user already selected a document for this field
+            selected_id = None
+            status = fr.get("status", "missing")
+            if session.selected_documents:
+                sel = session.selected_documents.get(fr.get("key"))
+                if sel:
+                    selected_id = sel[0] if isinstance(sel, list) else sel
+                    status = "selected"
+            
+            file_requirements.append(FileRequirementItem(
+                key=fr.get("key", ""),
+                label=fr.get("label", ""),
+                selector=fr.get("selector", ""),
+                required=fr.get("required", False),
+                accept=fr.get("accept", ""),
+                multiple=fr.get("multiple", False),
+                matched_saved_documents=matched_saved,
+                selected_document_id=selected_id,
+                status=status,
+            ))
+        
+        # File blocker check
+        for freq in file_requirements:
+            if freq.required and freq.status != "selected":
+                blocker_msg = f"Required file '{freq.label}' not yet selected."
+                if blocker_msg not in blockers:
+                    blockers.append(blocker_msg)
+        
+        ready = len(missing_required) == 0 and all(
+            fr.status == "selected" or not fr.required for fr in file_requirements
+        )
         
         # Save to session
         session.pre_filled_values = pre_filled_values
-        session.review_form_schema = [field.model_dump() for field in review_fields]
-        session.missing_fields = [{"key": k} for k in missing_required]
+        session.missing_fields = [{"key": m["name"]} for m in missing_required]
         session.status = "awaiting_confirmation"
         await session_store.save(session)
         
-        print(f"[ConfirmData] Generated schema with {len(review_fields)} fields")
-        print(f"[ConfirmData] {len(pre_filled_values)} fields have values")
-        print(f"[ConfirmData] {len(missing_required)} required fields missing: {missing_required}")
-        
-        # Build response
-        schema = ReviewFormSchema(
+        from models.review_schema import ConfirmDataPayload
+        payload = ConfirmDataPayload(
             session_id=session_id,
             url=session.url,
-            page_title=scraped_form_dict.get('page_title', ''),
-            fields=review_fields,
+            status="awaiting_confirmation" if not ready else "ready_for_execution",
+            ready_for_execution=ready,
+            blockers=blockers,
+            canonical_fields=[f.model_dump() for f in canonical_fields],
+            editable_fields=[f.model_dump() for f in editable_fields],
             missing_required_fields=missing_required,
-            status="awaiting_confirmation",
-            can_proceed=True
+            file_requirements=file_requirements,
+            pre_filled_values=pre_filled_values,
+            page_title=scraped_form_dict.get('page_title', ''),
         )
         
-        return ConfirmDataResponse(success=True, data=schema)
+        return ConfirmDataResponse(success=True, data=payload)
         
     except HTTPException:
         raise
@@ -208,15 +246,24 @@ async def confirm_data(session_id: str, request: ConfirmSubmitRequest):
         
         session.missing_fields = [{"key": k} for k in missing_required]
         
+        # Check file requirements too
+        file_blockers = []
+        for fr in (session.file_requirements or []):
+            if fr.get("required") and fr.get("status") != "selected":
+                file_blockers.append(fr.get("label", fr.get("key")))
+        
         # Update status
-        if missing_required:
+        if missing_required or file_blockers:
             session.status = "awaiting_confirmation"
-            message = f"{len(missing_required)} required fields still missing"
-            print(f"[Confirm] Status set to: awaiting_confirmation (missing: {missing_required})")
+            parts = []
+            if missing_required:
+                parts.append(f"{len(missing_required)} required fields still missing")
+            if file_blockers:
+                parts.append(f"{len(file_blockers)} required files not selected")
+            message = "; ".join(parts)
         else:
             session.status = "confirmed"
             message = "Data confirmed. Ready for autofill."
-            print(f"[Confirm] Status set to: confirmed")
         
         await session_store.save(session)
         

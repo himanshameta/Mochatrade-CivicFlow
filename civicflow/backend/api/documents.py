@@ -8,15 +8,17 @@ import sys
 from typing import List, Optional
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form, Path as FastApiPath
 from pydantic import BaseModel
+import shutil
+import uuid
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from agents.doc_vault_v2 import DocVaultAgent
 from utils.auth import require_auth, ok
 from db.mongo import get_db
-from models.user_models import UploadedDocumentRef
+from models.user_models import UploadedDocumentRef, DocumentDB
 from models.document_models import ConfirmDocumentRequest
 
 router = APIRouter(prefix="/documents", tags=["Documents"])
@@ -239,3 +241,322 @@ async def get_document_fields(doc_id: str, payload: dict = Depends(require_auth)
                 break
 
     return ok("Success", data={"fields": fields})
+
+# ===========================================================================
+# Physical File Upload and Retrieval
+# ===========================================================================
+
+@router.post("/users/{user_id}/documents/upload", summary="Upload and store a physical document")
+async def store_physical_document(
+    user_id: str = FastApiPath(...),
+    file: UploadFile = File(...),
+    doc_key: str = Form(...),
+    doc_label: Optional[str] = Form(None),
+    payload: dict = Depends(require_auth)
+):
+    """
+    Stores a physical document on disk and creates a DB record for it.
+    Does not run OCR immediately.
+    """
+    if payload["sub"] != user_id:
+        raise HTTPException(status_code=403, detail="Not authorized to upload for this user")
+        
+    db = await get_db()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    import os
+    import time
+    
+    # Sanitize inputs
+    safe_original_name = "".join(c for c in file.filename if c.isalnum() or c in ".-_ ").strip()
+    _, ext = os.path.splitext(safe_original_name)
+    timestamp = int(time.time())
+    
+    # Generate storage path
+    upload_base_dir = os.getenv("UPLOAD_DIR", "./uploads")
+    user_docs_dir = os.path.join(upload_base_dir, "user_docs", user_id)
+    os.makedirs(user_docs_dir, exist_ok=True)
+    
+    stored_filename = f"{doc_key}__{timestamp}__{safe_original_name}"
+    file_path = os.path.join(user_docs_dir, stored_filename)
+    
+    # Save file
+    try:
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save file: {e}")
+        
+    file_size = os.path.getsize(file_path)
+    
+    # Create metadata record
+    doc_meta = {
+        "doc_id": str(uuid.uuid4()),
+        "user_id": user_id,
+        "doc_key": doc_key,
+        "doc_label": doc_label or doc_key.replace("_", " ").title(),
+        "original_filename": safe_original_name,
+        "stored_filename": stored_filename,
+        "mime_type": file.content_type,
+        "extension": ext,
+        "file_path": os.path.abspath(file_path),
+        "file_size_bytes": file_size,
+        "uploaded_at": datetime.utcnow(),
+        "is_active": True,
+        "is_deleted": False
+    }
+    
+    # Invalidate older documents with same doc_key
+    await db.physical_documents.update_many(
+        {"user_id": user_id, "doc_key": doc_key},
+        {"$set": {"is_active": False}}
+    )
+    
+    # Insert new record
+    await db.physical_documents.insert_one(doc_meta)
+    
+    # Remove Mongo _id for response
+    doc_meta.pop("_id", None)
+    
+    return ok("Document uploaded and stored successfully", data=doc_meta)
+
+
+@router.get("/users/{user_id}/documents", summary="List stored physical documents")
+async def list_physical_documents(
+    user_id: str = FastApiPath(...),
+    payload: dict = Depends(require_auth)
+):
+    """Returns metadata for user's stored physical documents."""
+    if payload["sub"] != user_id:
+        raise HTTPException(status_code=403, detail="Not authorized")
+        
+    db = await get_db()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    # Get active documents
+    cursor = db.physical_documents.find({"user_id": user_id, "is_deleted": {"$ne": True}})
+    docs = await cursor.to_list(length=100)
+    
+    for d in docs:
+        d.pop("_id", None)
+        
+    return ok("Success", data={"documents": docs})
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# VAULT API — Privacy-first local document storage
+# ═══════════════════════════════════════════════════════════════════════════
+
+from models.vault_models import (
+    UserDocument, UserDocumentPublic, DocumentCategory, DocumentSource,
+    AttachDocumentRequest, UpdateDocumentRequest,
+)
+from utils.vault_storage import (
+    validate_file_upload, save_file_to_vault, save_temp_session_file,
+    resolve_document_path,
+)
+from db.vault_db import (
+    create_document as vault_create,
+    get_document as vault_get,
+    list_documents as vault_list,
+    update_document as vault_update,
+    soft_delete_document as vault_delete,
+)
+
+
+@router.post("/vault/upload", summary="Upload a document to the vault")
+async def vault_upload(
+    file: UploadFile = File(...),
+    display_name: str = Form(...),
+    category: str = Form("other"),
+    subcategory: str = Form(None),
+    tags: str = Form(""),
+    user=Depends(require_auth),
+):
+    """Upload and store a file in the user's local vault."""
+    user_id = user["user_id"]
+    file_bytes = await file.read()
+
+    try:
+        mime_type, extension = validate_file_upload(file_bytes, file.filename)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    stored_filename, storage_path, size_bytes = save_file_to_vault(
+        file_bytes, user_id, category, display_name, extension,
+    )
+
+    tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else []
+
+    doc = UserDocument(
+        user_id=user_id,
+        display_name=display_name,
+        category=category,
+        subcategory=subcategory or None,
+        original_filename=file.filename or "unknown",
+        stored_filename=stored_filename,
+        storage_path=storage_path,
+        mime_type=mime_type,
+        extension=extension,
+        size_bytes=size_bytes,
+        tags=tag_list,
+        source=DocumentSource.MANUAL_UPLOAD,
+    )
+
+    await vault_create(doc)
+    return ok("Document uploaded", data=UserDocumentPublic.from_document(doc).model_dump())
+
+
+@router.get("/vault/list", summary="List vault documents")
+async def vault_list_docs(
+    category: str = None,
+    user=Depends(require_auth),
+):
+    docs = await vault_list(user["user_id"], category=category)
+    return ok("Success", data={
+        "documents": [UserDocumentPublic.from_document(d).model_dump() for d in docs]
+    })
+
+
+@router.get("/vault/{document_id}", summary="Get vault document metadata")
+async def vault_get_doc(document_id: str, user=Depends(require_auth)):
+    doc = await vault_get(document_id, user["user_id"])
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return ok("Success", data=UserDocumentPublic.from_document(doc).model_dump())
+
+
+@router.patch("/vault/{document_id}", summary="Update vault document metadata")
+async def vault_update_doc(
+    document_id: str,
+    body: UpdateDocumentRequest,
+    user=Depends(require_auth),
+):
+    updates = body.model_dump(exclude_none=True)
+    if "category" in updates and isinstance(updates["category"], DocumentCategory):
+        updates["category"] = updates["category"].value
+    success = await vault_update(document_id, user["user_id"], updates)
+    if not success:
+        raise HTTPException(status_code=404, detail="Document not found or no changes")
+    return ok("Document updated")
+
+
+@router.delete("/vault/{document_id}", summary="Delete vault document")
+async def vault_delete_doc(document_id: str, user=Depends(require_auth)):
+    success = await vault_delete(document_id, user["user_id"])
+    if not success:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return ok("Document deleted")
+
+
+# ── Session document endpoints ─────────────────────────────────────────
+
+@router.post("/session/{session_id}/attach-document", summary="Attach a vault document to a session file field")
+async def session_attach_document(
+    session_id: str,
+    body: AttachDocumentRequest,
+    user=Depends(require_auth),
+):
+    """Link an existing vault document to a session's file requirement."""
+    from models.session_models import SessionStore
+    store = SessionStore()
+    session = await store.load(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    # Verify document exists and belongs to user
+    doc = await vault_get(body.document_id, user["user_id"])
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found in your vault")
+
+    # Verify file exists on disk
+    abs_path = resolve_document_path(doc.storage_path)
+    if not abs_path:
+        raise HTTPException(status_code=410, detail="Document file missing from disk")
+
+    # Store selection in session
+    if not session.selected_documents:
+        session.selected_documents = {}
+    session.selected_documents[body.field_name] = [body.document_id]
+
+    # Update file_requirements status
+    for fr in (session.file_requirements or []):
+        if fr.get("key") == body.field_name:
+            fr["selected_document_id"] = body.document_id
+            fr["status"] = "selected"
+
+    await store.save(session)
+    return ok("Document attached", data={"field_name": body.field_name, "document_id": body.document_id})
+
+
+@router.post("/session/{session_id}/upload-document", summary="Upload a file for a session file field")
+async def session_upload_document(
+    session_id: str,
+    file: UploadFile = File(...),
+    field_name: str = Form(...),
+    display_name: str = Form(...),
+    category: str = Form("other"),
+    save_for_reuse: bool = Form(True),
+    user=Depends(require_auth),
+):
+    """Upload a file during form review. Optionally saves to vault for reuse."""
+    from models.session_models import SessionStore
+    store = SessionStore()
+    session = await store.load(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    user_id = user["user_id"]
+    file_bytes = await file.read()
+
+    try:
+        mime_type, extension = validate_file_upload(file_bytes, file.filename)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    doc_id = None
+    if save_for_reuse:
+        # Save to vault permanently
+        stored_filename, storage_path, size_bytes = save_file_to_vault(
+            file_bytes, user_id, category, display_name, extension,
+        )
+        doc = UserDocument(
+            user_id=user_id,
+            display_name=display_name,
+            category=category,
+            original_filename=file.filename or "unknown",
+            stored_filename=stored_filename,
+            storage_path=storage_path,
+            mime_type=mime_type,
+            extension=extension,
+            size_bytes=size_bytes,
+            source=DocumentSource.SESSION_UPLOAD,
+        )
+        await vault_create(doc)
+        doc_id = doc.document_id
+    else:
+        # Save to temp session dir only
+        stored_filename, storage_path = save_temp_session_file(
+            file_bytes, session_id, field_name, extension,
+        )
+        doc_id = storage_path  # Use path as identifier for temp files
+
+    # Store selection in session
+    if not session.selected_documents:
+        session.selected_documents = {}
+    session.selected_documents[field_name] = [doc_id]
+
+    # Update file_requirements status
+    for fr in (session.file_requirements or []):
+        if fr.get("key") == field_name:
+            fr["selected_document_id"] = doc_id
+            fr["status"] = "selected"
+
+    await store.save(session)
+    return ok("File uploaded and attached", data={
+        "field_name": field_name,
+        "document_id": doc_id,
+        "saved_to_vault": save_for_reuse,
+    })

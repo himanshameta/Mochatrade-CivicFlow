@@ -229,58 +229,145 @@ async def update_profile(request: dict, payload: dict = Depends(require_auth)):
     """
     Update user profile information.
     Creates or updates the user_profiles collection with encrypted data.
+
+    Normalizes frontend field names to canonical backend names before assignment.
+    Returns 422 with field-level errors if any field fails validation.
     """
     user_id = payload["sub"]
     print(f"[Auth API] Profile update request for user_id={user_id}")
-    
+    print(f"[Auth API] Raw payload keys: {list(request.keys())}")
+
+    # Log raw payload (redact sensitive values)
+    for section_name in ["basic_info", "contact", "identity", "education"]:
+        section_data = request.get(section_name, {})
+        if isinstance(section_data, dict):
+            safe_keys = {k: ("***" if k in ("pan_number", "aadhaar_number") else v[:30] if isinstance(v, str) and len(v) > 30 else v)
+                         for k, v in section_data.items() if v}
+            print(f"[Auth API]   {section_name}: {safe_keys}")
+
     try:
         from db.mongo import get_db
-        from models.user_models import UserProfileData, BasicInfo, ContactInfo
-        
+        from models.user_models import UserProfileData, BasicInfo, ContactInfo, IdentityInfo, EducationInfo
+        from utils.profile_normalizer import normalize_profile_update_payload, get_valid_keys_for_section
+        from utils.encryption import encrypt_profile
+
         db = await get_db()
         if db is None:
-            return ok("Profile update queued", data={"message": "Database unavailable, changes saved locally"})
-        
-        # Get or create profile
-        profile = await db.user_profiles.find_one({"user_id": user_id})
-        
-        if profile:
-            profile.pop("_id", None)
-            profile_data = UserProfileData(**profile)
+            raise HTTPException(
+                status_code=503,
+                detail="Database unavailable"
+            )
+
+        # ── Step 1: Normalize frontend keys to canonical backend keys ──
+        normalized, normalize_errors = normalize_profile_update_payload(request)
+
+        print(f"[Auth API] Normalized payload:")
+        for section_name, section_data in normalized.items():
+            if section_data:
+                print(f"[Auth API]   {section_name}: {list(section_data.keys())}")
+        if normalize_errors:
+            print(f"[Auth API] Normalization warnings: {normalize_errors}")
+
+        # ── Step 2: Load or create profile ──
+        profile_doc = await db.user_profiles.find_one({"user_id": user_id})
+
+        if profile_doc:
+            profile_doc.pop("_id", None)
+            try:
+                profile_data = UserProfileData(**profile_doc)
+            except Exception as e:
+                print(f"[Auth API] Failed to parse existing profile, creating new: {e}")
+                profile_data = UserProfileData(user_id=user_id)
         else:
             profile_data = UserProfileData(user_id=user_id)
-        
-        # Update fields from request
-        if "basic_info" in request:
-            for key, val in request["basic_info"].items():
-                setattr(profile_data.basic_info, key, val)
-        
-        if "contact" in request:
-            for key, val in request["contact"].items():
-                setattr(profile_data.contact, key, val)
-        
-        if "identity" in request:
-            for key, val in request["identity"].items():
-                setattr(profile_data.identity, key, val)
-        
-        if "education" in request:
-            for key, val in request["education"].items():
-                setattr(profile_data.education, key, val)
-        
+
+        # ── Step 3: Safe merge — only set keys that exist in the model ──
+        validation_errors = []
+        fields_written = []
+
+        section_models = {
+            "basic_info": (profile_data.basic_info, BasicInfo),
+            "contact": (profile_data.contact, ContactInfo),
+            "identity": (profile_data.identity, IdentityInfo),
+            "education": (profile_data.education, EducationInfo),
+        }
+
+        for section_name, (section_obj, model_cls) in section_models.items():
+            section_data = normalized.get(section_name, {})
+            if not section_data:
+                continue
+
+            valid_keys = get_valid_keys_for_section(section_name)
+            model_fields = set(model_cls.model_fields.keys())
+
+            for key, val in section_data.items():
+                if key.startswith("_"):
+                    continue  # skip compound intermediates
+
+                if key not in model_fields:
+                    validation_errors.append(
+                        f"Field '{key}' is not valid for section '{section_name}'"
+                    )
+                    print(f"[Auth API] SKIP: '{key}' not in {section_name} model fields")
+                    continue
+
+                try:
+                    setattr(section_obj, key, val)
+                    fields_written.append(f"{section_name}.{key}")
+                except Exception as e:
+                    validation_errors.append(
+                        f"Failed to set {section_name}.{key}: {str(e)}"
+                    )
+                    print(f"[Auth API] ERROR: setattr({section_name}.{key}, {val!r}): {e}")
+
+        print(f"[Auth API] Fields written: {fields_written}")
+
+        if not fields_written:
+            return {
+                "success": False,
+                "message": "No valid fields to update",
+                "errors": validation_errors or ["No recognized fields in payload"],
+            }
+
+        # ── Step 4: Encrypt and save ──
         profile_data.updated_at = datetime.utcnow()
-        
-        # Save to database
+
+        profile_dict = profile_data.model_dump()
+        encrypted_dict = encrypt_profile(profile_dict, user_id)
+
         await db.user_profiles.update_one(
             {"user_id": user_id},
-            {"$set": profile_data.model_dump()},
+            {"$set": encrypted_dict},
             upsert=True
         )
-        
-        print(f"[Auth API] Profile updated successfully for user_id={user_id}")
-        return ok("Profile updated successfully", data=profile_data.model_dump())
-        
+
+        print(f"[Auth API] Profile saved: {len(fields_written)} fields, {len(validation_errors)} errors")
+
+        # ── Step 5: Return result ──
+        response = {
+            "success": True,
+            "message": f"Profile updated: {len(fields_written)} fields saved",
+            "data": {
+                "fields_written": fields_written,
+                "warnings": validation_errors if validation_errors else [],
+            }
+        }
+        if validation_errors:
+            response["message"] += f" ({len(validation_errors)} warnings)"
+
+        return response
+
+    except HTTPException:
+        raise
     except Exception as e:
-        print(f"[Auth API] Profile update error: {type(e).__name__}: {str(e)}")
         import traceback
         traceback.print_exc()
-        return ok("Profile update failed", data={"error": str(e)})
+        print(f"[Auth API] Profile update FAILED: {type(e).__name__}: {str(e)}")
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "success": False,
+                "message": "Profile update failed",
+                "errors": [f"{type(e).__name__}: {str(e)}"],
+            }
+        )
