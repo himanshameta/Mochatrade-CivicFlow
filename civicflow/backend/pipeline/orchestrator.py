@@ -68,6 +68,13 @@ async def node_scout(state: PipelineState) -> PipelineState:
         elif "timeout" in error_msg.lower():
             error_msg = "The page took too long to load. The server may be slow or unreachable."
         
+        # Save failure state to session store so backend polls receive latest status
+        session = await session_store.load(state["session_id"])
+        if session:
+            session.status = "failed"
+            session.error = error_msg
+            await session_store.save(session)
+        
         return {
             **state,
             "status": "failed",
@@ -96,11 +103,17 @@ async def node_scraper(state: PipelineState) -> PipelineState:
     
     if not html or len(html) < 100:
         print("[Pipeline] [FAIL] Invalid HTML — stopping pipeline")
+        err = "Page loaded but no valid HTML content found. The page may require authentication or JavaScript."
+        session = await session_store.load(state["session_id"])
+        if session:
+            session.status = "failed"
+            session.error = err
+            await session_store.save(session)
         return {
             **state,
             "scraped_form": None,
             "status": "failed",
-            "error": "Page loaded but no valid HTML content found. The page may require authentication or JavaScript.",
+            "error": err,
             "retry_count": 999
         }
     
@@ -108,22 +121,34 @@ async def node_scraper(state: PipelineState) -> PipelineState:
     
     if result is None:
         print("[Pipeline] [FAIL] Scraper returned None — stopping pipeline")
+        err = "Could not find any form fields on this page. Make sure the URL points directly to a page with a form."
+        session = await session_store.load(state["session_id"])
+        if session:
+            session.status = "failed"
+            session.error = err
+            await session_store.save(session)
         return {
             **state,
             "scraped_form": None,
             "status": "failed",
-            "error": "Could not find any form fields on this page. Make sure the URL points directly to a page with a form.",
+            "error": err,
             "retry_count": 999
         }
     
     fields_count = len(result.get('fields', []))
     if fields_count == 0:
         print("[Pipeline] [FAIL] No fields found — stopping pipeline")
+        err = "Found form structure but no fillable fields detected."
+        session = await session_store.load(state["session_id"])
+        if session:
+            session.status = "failed"
+            session.error = err
+            await session_store.save(session)
         return {
             **state,
             "scraped_form": None,
             "status": "failed",
-            "error": "Found form structure but no fillable fields detected.",
+            "error": err,
             "retry_count": 999
         }
     
@@ -678,10 +703,26 @@ async def run_pipeline(session_id: str, url: str, user_id: Optional[str] = None,
             print(f"Paused: {final_state['pause_context']}")
         print(f"{'=' * 80}\n")
         
+        # Persist status and error if graph ended in a failed state
+        if final_state.get("status") == "failed":
+            session = await session_store.load(session_id)
+            if session:
+                session.status = "failed"
+                session.error = final_state.get("error") or "Pipeline execution failed"
+                await session_store.save(session)
+        
     except Exception as e:
         print(f"\n[Pipeline] Fatal error: {e}")
-        await session_store.update_status(session_id, "failed")
-        await session_store.update_field(session_id, "error", str(e))
+        import traceback
+        traceback.print_exc()
+        session = await session_store.load(session_id)
+        if session:
+            session.status = "failed"
+            session.error = str(e)
+            await session_store.save(session)
+        else:
+            await session_store.update_status(session_id, "failed")
+            await session_store.update_field(session_id, "error", str(e))
     
     # Return final session
     return await session_store.load(session_id)

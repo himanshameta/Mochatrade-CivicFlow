@@ -146,17 +146,35 @@ async def start_compat(request: StartSessionRequest, background_tasks: Backgroun
                 print(f"[Start] Launching pipeline for {session_id} with user {user_id}")
                 await manager.broadcast_status_change(session_id, "analyzing", "Analyzing form...")
                 # Pass user_id to pipeline so it fetches profile from DB
-                await run_pipeline(session_id, request.url, user_id, {})
-                print(f"[Start] Pipeline completed for {session_id}")
+                res_session = await run_pipeline(session_id, request.url, user_id, {})
+                
+                # Verify session state from store after pipeline returns
+                session = await session_store.load(session_id)
+                if session and session.status == "failed":
+                    print(f"[Start] Pipeline finished with failed status for {session_id}: {session.error}")
+                    try:
+                        await manager.broadcast_error(session_id, session.error or "Form analysis failed")
+                    except Exception:
+                        pass
+                else:
+                    print(f"[Start] Pipeline completed successfully for {session_id}")
             except Exception as e:
-                print(f"[Start] Pipeline error for {session_id}: {e}")
                 import traceback
+                print(f"[Start] Pipeline error for {session_id}: {e}")
                 traceback.print_exc()
-                await session_store.update_status(session_id, "failed")
-                await session_store.update_field(session_id, "error", str(e))
+                
+                session = await session_store.load(session_id)
+                if session:
+                    session.status = "failed"
+                    session.error = str(e)
+                    await session_store.save(session)
+                else:
+                    await session_store.update_status(session_id, "failed")
+                    await session_store.update_field(session_id, "error", str(e))
+                
                 try:
                     await manager.broadcast_error(session_id, str(e))
-                except:
+                except Exception:
                     pass
         
         background_tasks.add_task(run_initial_analysis)
