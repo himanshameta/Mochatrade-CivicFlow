@@ -119,6 +119,9 @@ async def upload_document(
         raise HTTPException(status_code=500, detail={"success": False, "message": f"Processing failed: {str(e)}", "data": {}})
 
 
+_in_memory_user_profiles: dict[str, dict] = {}
+
+
 @router.post("/confirm/{doc_id}", summary="Confirm and save document to profile")
 async def confirm_document(
     doc_id: str,
@@ -130,18 +133,29 @@ async def confirm_document(
     """
     user_id = payload["sub"]
     db = await get_db()
-    if db is None:
-        raise HTTPException(status_code=503, detail="Database unavailable")
 
     # Fetch document metadata
-    doc_meta = await db.documents.find_one({"doc_id": doc_id, "user_id": user_id})
-    if not doc_meta:
-        # Fallback to user_documents collection (for vault uploads)
-        doc_meta = await db.user_documents.find_one({"document_id": doc_id, "user_id": user_id})
-        if doc_meta:
-            doc_meta["doc_id"] = doc_meta["document_id"]
-            doc_meta["doc_type"] = doc_meta.get("category", "unknown")
-            
+    doc_meta = None
+    if db is not None:
+        doc_meta = await db.documents.find_one({"doc_id": doc_id, "user_id": user_id})
+        if not doc_meta:
+            # Fallback to user_documents collection (for vault uploads)
+            doc_meta = await db.user_documents.find_one({"document_id": doc_id, "user_id": user_id})
+            if doc_meta:
+                doc_meta["doc_id"] = doc_meta["document_id"]
+                doc_meta["doc_type"] = doc_meta.get("category", "unknown")
+    else:
+        vdoc = await vault_get(doc_id, user_id)
+        if vdoc:
+            doc_meta = {
+                "doc_id": vdoc.document_id,
+                "user_id": vdoc.user_id,
+                "doc_type": vdoc.category,
+                "original_filename": vdoc.original_filename,
+                "storage_path": vdoc.storage_path,
+                "ocr_results": {}
+            }
+
     if not doc_meta:
         raise HTTPException(status_code=404, detail="Document not found")
 
@@ -165,11 +179,17 @@ async def confirm_document(
     from models.user_models import UserProfileData, BasicInfo, ContactInfo, IdentityInfo, EducationInfo
     from utils.profile_normalizer import normalize_profile_update_payload
 
-    profile_doc = await db.user_profiles.find_one({"user_id": user_id})
+    profile_doc = None
+    if db is not None:
+        profile_doc = await db.user_profiles.find_one({"user_id": user_id})
+    else:
+        profile_doc = _in_memory_user_profiles.get(user_id)
+
     if profile_doc:
-        profile_doc.pop("_id", None)
+        profile_doc_copy = dict(profile_doc)
+        profile_doc_copy.pop("_id", None)
         try:
-            profile_data = UserProfileData(**profile_doc)
+            profile_data = UserProfileData(**profile_doc_copy)
         except Exception as e:
             print(f"[Confirm Document] Failed to parse existing profile, creating new: {e}")
             profile_data = UserProfileData(user_id=user_id)
@@ -215,17 +235,22 @@ async def confirm_document(
 
     profile_data.updated_at = datetime.utcnow()
 
-    # Encrypt profile sections and save to database
+    # Encrypt profile sections and save to database or in-memory store
     profile_dict = profile_data.model_dump()
     encrypted_dict = encrypt_profile(profile_dict, user_id)
 
-    await db.user_profiles.update_one(
-        {"user_id": user_id},
-        {"$set": encrypted_dict},
-        upsert=True
-    )
+    if db is not None:
+        await db.user_profiles.update_one(
+            {"user_id": user_id},
+            {"$set": encrypted_dict},
+            upsert=True
+        )
+    else:
+        _in_memory_user_profiles[user_id] = encrypted_dict
+        print(f"[Confirm Document] [OK] Profile updated in in-memory fallback for user {user_id}")
 
     return ok("Document confirmed and profile updated successfully")
+
 
 
 @router.get("/list", summary="List uploaded documents")

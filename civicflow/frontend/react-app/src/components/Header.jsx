@@ -27,6 +27,12 @@ const Header = ({ user, onLogout }) => {
           >
             Find Form
           </Link>
+          <Link 
+            to="/documents" 
+            className={`nav-link ${isActive('/documents') || isActive('/documents/upload') ? 'active' : ''}`}
+          >
+            My Documents
+          </Link>
         </nav>
 
         <div className="header-right">
