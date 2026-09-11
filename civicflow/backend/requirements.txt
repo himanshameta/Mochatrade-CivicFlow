@@ -42,8 +42,8 @@ passlib[bcrypt]            # Password hashing
 bcrypt==4.0.1              # Pin: newer bcrypt breaks passlib on Python 3.11
 
 # ── Phase 3 (DocVault Pipeline) ───────────────────────────────
-paddleocr==3.0.3
-paddlepaddle==3.0.0
+paddleocr==3.6.0
+paddlepaddle==3.3.1
 pdf2image==1.17.0
 Pillow>=10.0.0
 python-magic==0.4.27

@@ -9,7 +9,7 @@ class InMemorySessionStore:
     """In-memory fallback when Redis is not available"""
     def __init__(self):
         self._store: Dict[str, UserSession] = {}
-        print("[SessionStore] ⚠ Using in-memory storage (Redis not available)")
+        print("[SessionStore] [WARN] Using in-memory storage (Redis not available)")
     
     def _session_key(self, session_id: str) -> str:
         return f"session:{session_id}"
@@ -61,7 +61,7 @@ class MongoSessionStore:
     """MongoDB-backed session store — used when MONGO_URI is configured."""
 
     def __init__(self):
-        print("[SessionStore] ✓ Using MongoDB storage")
+        print("[SessionStore] [OK] Using MongoDB storage")
 
     def _session_key(self, session_id: str) -> str:
         return session_id
@@ -176,7 +176,7 @@ class SessionStore:
                     if self._mongo is None:
                         self._mongo = MongoSessionStore()
             except Exception as e:
-                print(f"[SessionStore] ✗ MongoDB init failed: {e}")
+                print(f"[SessionStore] [ERROR] MongoDB init failed: {e}")
 
         if self._use_mongo and self._mongo:
             return self._mongo
@@ -193,10 +193,10 @@ class SessionStore:
                 self.redis = await from_url(self.redis_url, decode_responses=True)
                 # Test connection
                 await self.redis.ping()
-                print("[SessionStore] ✓ Connected to Redis")
+                print("[SessionStore] [OK] Connected to Redis")
             except Exception as e:
-                print(f"[SessionStore] ✗ Redis connection failed: {e}")
-                print("[SessionStore] → Falling back to in-memory storage")
+                print(f"[SessionStore] [ERROR] Redis connection failed: {e}")
+                print("[SessionStore] -> Falling back to in-memory storage")
                 self._use_fallback = True
                 self._fallback = InMemorySessionStore()
                 return self._fallback

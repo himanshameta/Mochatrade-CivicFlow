@@ -5,6 +5,7 @@ Handles autofill for different field types using session.pre_filled_values.
 This is the contract between the confirmation system and Playwright execution.
 """
 import json
+import os
 
 def py_string(value: str) -> str:
     """Safely convert a value to a python string literal."""

@@ -33,7 +33,7 @@ async def connect_mongo(uri: str, db_name: str = "civicflow") -> object:
     global _client, _db
 
     if not MOTOR_AVAILABLE:
-        print("[MongoDB] ✗ motor not installed — run: pip install motor")
+        print("[MongoDB] [ERROR] motor not installed — run: pip install motor")
         return None
 
     try:
@@ -49,18 +49,18 @@ async def connect_mongo(uri: str, db_name: str = "civicflow") -> object:
 
         # Verify connection with a ping
         await _client.admin.command("ping")
-        print(f"[MongoDB] ✓ Connected — database: '{db_name}' | pool: 2–10 connections")
+        print(f"[MongoDB] [OK] Connected — database: '{db_name}' | pool: 2–10 connections")
 
         # Create indexes on first connect
         await _ensure_indexes(_db)
         return _db
 
     except Exception as e:
-        print(f"[MongoDB] ✗ Connection failed: {e}")
+        print(f"[MongoDB] [ERROR] Connection failed: {e}")
         print(f"[MongoDB]   URI used: {uri[:30]}...")
-        print(f"[MongoDB]   → Is MongoDB running? Check: docker ps | grep mongo")
-        print(f"[MongoDB]   → Verify MONGO_URI in backend/.env")
-        print(f"[MongoDB]   → CivicFlow will use Redis/in-memory fallback instead")
+        print(f"[MongoDB]   -> Is MongoDB running? Check: docker ps | grep mongo")
+        print(f"[MongoDB]   -> Verify MONGO_URI in backend/.env")
+        print(f"[MongoDB]   -> CivicFlow will use Redis/in-memory fallback instead")
         _client = None
         _db = None
         return None
@@ -77,9 +77,9 @@ async def _ensure_indexes(db) -> None:
         await db.users.create_index("email", unique=True)
         await db.users.create_index("user_id", unique=True)
 
-        print("[MongoDB] ✓ Indexes ensured")
+        print("[MongoDB] [OK] Indexes ensured")
     except Exception as e:
-        print(f"[MongoDB] ⚠ Index creation warning: {e}")
+        print(f"[MongoDB] [WARN] Index creation warning: {e}")
 
 
 async def get_db() -> Optional[object]:

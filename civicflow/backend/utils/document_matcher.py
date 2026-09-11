@@ -200,3 +200,61 @@ def validate_document_for_field(document: dict, file_requirement: dict) -> tuple
         return False, f"File type {doc_ext or doc_mime} not accepted (requires: {accept})"
 
     return True, "Compatible"
+
+
+def match_user_document_to_field(
+    label: str,
+    accept: str,
+    user_documents: List[dict],
+) -> Optional[dict]:
+    """
+    Match a user's physical document to a form file field.
+    Returns the best matching document dict or None.
+    """
+    if not user_documents:
+        return None
+
+    # Filter by accept-compatibility first
+    valid_docs = []
+    for doc in user_documents:
+        mime_type = doc.get("mime_type", "")
+        extension = doc.get("extension", "")
+        if not extension and doc.get("file_path"):
+            _, extension = os.path.splitext(doc["file_path"])
+        if file_matches_accept(mime_type, extension, accept):
+            valid_docs.append(doc)
+
+    if not valid_docs:
+        return None
+
+    # Score each doc
+    best_doc = None
+    best_score = -1.0
+
+    for doc in valid_docs:
+        score = 0.0
+        doc_label = doc.get("doc_label", "")
+        doc_key = doc.get("doc_key", "")
+        orig_name = doc.get("original_filename", "")
+
+        # 1. Check direct token overlap on label and doc_label/doc_key
+        label_sim = _token_overlap(label, doc_label)
+        key_sim = _token_overlap(label, doc_key)
+        orig_sim = _token_overlap(label, orig_name)
+
+        score += max(label_sim, key_sim) * 50
+        score += orig_sim * 20
+
+        # 2. Exact match check
+        if label.lower().strip() == doc_label.lower().strip() or label.lower().strip() == doc_key.lower().strip():
+            score += 100
+
+        if score > best_score:
+            best_score = score
+            best_doc = doc
+
+    # Only return if there is some confidence
+    if best_score > 0:
+        return best_doc
+    return None
+

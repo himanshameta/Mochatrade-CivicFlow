@@ -376,7 +376,7 @@ async def vault_upload(
     user=Depends(require_auth),
 ):
     """Upload and store a file in the user's local vault."""
-    user_id = user["user_id"]
+    user_id = user["sub"]
     file_bytes = await file.read()
 
     try:
@@ -414,7 +414,7 @@ async def vault_list_docs(
     category: str = None,
     user=Depends(require_auth),
 ):
-    docs = await vault_list(user["user_id"], category=category)
+    docs = await vault_list(user["sub"], category=category)
     return ok("Success", data={
         "documents": [UserDocumentPublic.from_document(d).model_dump() for d in docs]
     })
@@ -422,7 +422,7 @@ async def vault_list_docs(
 
 @router.get("/vault/{document_id}", summary="Get vault document metadata")
 async def vault_get_doc(document_id: str, user=Depends(require_auth)):
-    doc = await vault_get(document_id, user["user_id"])
+    doc = await vault_get(document_id, user["sub"])
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
     return ok("Success", data=UserDocumentPublic.from_document(doc).model_dump())
@@ -437,7 +437,7 @@ async def vault_update_doc(
     updates = body.model_dump(exclude_none=True)
     if "category" in updates and isinstance(updates["category"], DocumentCategory):
         updates["category"] = updates["category"].value
-    success = await vault_update(document_id, user["user_id"], updates)
+    success = await vault_update(document_id, user["sub"], updates)
     if not success:
         raise HTTPException(status_code=404, detail="Document not found or no changes")
     return ok("Document updated")
@@ -445,7 +445,7 @@ async def vault_update_doc(
 
 @router.delete("/vault/{document_id}", summary="Delete vault document")
 async def vault_delete_doc(document_id: str, user=Depends(require_auth)):
-    success = await vault_delete(document_id, user["user_id"])
+    success = await vault_delete(document_id, user["sub"])
     if not success:
         raise HTTPException(status_code=404, detail="Document not found")
     return ok("Document deleted")
@@ -467,7 +467,7 @@ async def session_attach_document(
         raise HTTPException(status_code=404, detail="Session not found")
 
     # Verify document exists and belongs to user
-    doc = await vault_get(body.document_id, user["user_id"])
+    doc = await vault_get(body.document_id, user["sub"])
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found in your vault")
 
@@ -508,7 +508,7 @@ async def session_upload_document(
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    user_id = user["user_id"]
+    user_id = user["sub"]
     file_bytes = await file.read()
 
     try:
