@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CivicFlow - Automated Form Filling</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="logo">
+                <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+                    <rect width="32" height="32" rx="8" fill="#f97316"/>
+                    <path d="M8 16L14 22L24 10" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <h1>CivicFlow</h1>
+            </div>
+            <div class="session-info" id="sessionInfo" style="display: none;">
+                <span class="session-label">Session:</span>
+                <span class="session-id" id="sessionId">-</span>
+            </div>
+        </header>
+
+        <!-- Error Banner -->
+        <div class="error-banner" id="errorBanner" style="display: none;">
+            <span class="error-icon">⚠</span>
+            <span class="error-message" id="errorMessage"></span>
+            <button class="error-close" onclick="hideError()">×</button>
+        </div>
+
+        <!-- VIEW 1: Start -->
+        <div id="view-start" class="view active">
+            <div class="view-content">
+                <div class="hero">
+                    <h2 class="hero-title">Automate Any Web Form</h2>
+                    <p class="hero-subtitle">AI-powered form filling that learns from your documents</p>
+                </div>
+
+                <div class="url-input-wrapper">
+                    <input 
+                        type="url" 
+                        id="formUrl" 
+                        class="url-input" 
+                        placeholder="Paste the form URL here (e.g., https://example.com/form)"
+                        autofocus
+                    />
+                    <button class="btn btn-primary" id="btnAnalyze" onclick="startSession()">
+                        <span class="btn-text">Analyze Form</span>
+                        <span class="btn-icon">→</span>
+                    </button>
+                </div>
+
+                <div class="features">
+                    <div class="feature">
+                        <span class="feature-icon">🤖</span>
+                        <span class="feature-text">AI-powered field detection</span>
+                    </div>
+                    <div class="feature">
+                        <span class="feature-icon">📄</span>
+                        <span class="feature-text">Auto-fill from documents</span>
+                    </div>
+                    <div class="feature">
+                        <span class="feature-icon">⚡</span>
+                        <span class="feature-text">One-click submission</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- VIEW 2: Documents Upload -->
+        <div id="view-documents" class="view">
+            <div class="view-content">
+                <div class="progress-header">
+                    <span class="progress-step active">1. Upload Documents</span>
+                    <span class="progress-step">2. Review Data</span>
+                    <span class="progress-step">3. Execute</span>
+                </div>
+
+                <h2 class="view-title">Upload Your Documents</h2>
+                <p class="view-description">Upload any documents containing your information. We'll extract data automatically.</p>
+
+                <div class="upload-zone" id="uploadZone">
+                    <svg class="upload-icon" width="64" height="64" viewBox="0 0 64 64" fill="none">
+                        <path d="M32 8V40M32 8L20 20M32 8L44 20" stroke="#f97316" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M8 48V52C8 54.2091 9.79086 56 12 56H52C54.2091 56 56 54.2091 56 52V48" stroke="#94a3b8" stroke-width="3" stroke-linecap="round"/>
+                    </svg>
+                    <p class="upload-text">Drag and drop files here or <span class="upload-link">browse</span></p>
+                    <p class="upload-hint">Supported: PDF, JPG, PNG • Aadhaar, PAN, Marksheets, etc.</p>
+                    <input type="file" id="fileInput" class="file-input" multiple accept=".pdf,.jpg,.jpeg,.png,.bmp,.tiff">
+                </div>
+
+                <div class="file-list" id="fileList"></div>
+
+                <button class="btn btn-primary btn-full" id="btnProcessDocs" onclick="processDocuments()" style="display: none;">
+                    <span class="btn-text">Process Documents</span>
+                    <span class="btn-icon">→</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- VIEW 3: Data Collection -->
+        <div id="view-collect" class="view">
+            <div class="view-content">
+                <div class="progress-header">
+                    <span class="progress-step completed">1. Upload Documents</span>
+                    <span class="progress-step active">2. Review Data</span>
+                    <span class="progress-step">3. Execute</span>
+                </div>
+
+                <h2 class="view-title">Review & Complete Your Information</h2>
+                <p class="view-description" id="collectDescription">Fields extracted from your documents are pre-filled. Please review and complete any missing information.</p>
+
+                <div class="data-form" id="dataForm"></div>
+
+                <button class="btn btn-primary btn-full" id="btnStartFilling" onclick="startFormFilling()">
+                    <span class="btn-text">Start Form Filling</span>
+                    <span class="btn-icon">→</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- VIEW 4: Running Automation -->
+        <div id="view-running" class="view">
+            <div class="view-content">
+                <div class="progress-header">
+                    <span class="progress-step completed">1. Upload Documents</span>
+                    <span class="progress-step completed">2. Review Data</span>
+                    <span class="progress-step active">3. Execute</span>
+                </div>
+
+                <h2 class="view-title">Form Automation in Progress</h2>
+                <p class="view-description">Our AI agents are filling out your form. This usually takes 30-60 seconds.</p>
+
+                <!-- CHANGE 1: Browser Visibility Notice -->
+                <div id="browserNotice" class="notice-banner" style="display: none;">
+                    🤖 Automation browser is now open on your screen. 
+                    Watch as CivicFlow fills the form for you!
+                    Do not close that window.
+                </div>
+
+                <!-- Pause Banners -->
+                <div class="pause-banner pause-captcha" id="pauseCaptcha" style="display: none;">
+                    <div class="pause-header">
+                        <span class="pause-icon">🤖</span>
+                        <div>
+                            <h3>CAPTCHA Detected</h3>
+                            <p>Please solve the CAPTCHA in the browser window, then click Resume below.</p>
+                        </div>
+                    </div>
+                    <img id="captchaScreenshot" class="pause-screenshot" style="display: none;">
+                    <button class="btn btn-warning" onclick="resumeAfterCaptcha()">
+                        <span class="btn-text">I Solved It - Resume</span>
+                        <span class="btn-icon">▶</span>
+                    </button>
+                </div>
+
+                <div class="pause-banner pause-otp" id="pauseOtp" style="display: none;">
+                    <div class="pause-header">
+                        <span class="pause-icon">📱</span>
+                        <div>
+                            <h3>OTP Verification Required</h3>
+                            <p>Enter the verification code sent to your phone or email.</p>
+                        </div>
+                    </div>
+                    <div class="otp-input-group">
+                        <input type="text" id="otpInput" class="otp-input" placeholder="Enter OTP" maxlength="6">
+                        <button class="btn btn-warning" onclick="resumeAfterOtp()">
+                            <span class="btn-text">Submit OTP</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- CHANGE 2: Live Step Tracker -->
+                <div class="live-tracker">
+                    <h3 class="tracker-title">Live Progress</h3>
+                    <div class="live-steps" id="liveSteps"></div>
+                </div>
+
+                <!-- Static Status Timeline -->
+                <div class="status-timeline" id="statusTimeline">
+                    <div class="timeline-item completed">
+                        <span class="timeline-icon">✓</span>
+                        <span class="timeline-text">Form analyzed</span>
+                    </div>
+                    <div class="timeline-item completed">
+                        <span class="timeline-icon">✓</span>
+                        <span class="timeline-text">Documents processed</span>
+                    </div>
+                    <div class="timeline-item completed">
+                        <span class="timeline-icon">✓</span>
+                        <span class="timeline-text">Data collected</span>
+                    </div>
+                    <div class="timeline-item active">
+                        <span class="timeline-icon spinner">⟳</span>
+                        <span class="timeline-text">Filling form fields...</span>
+                    </div>
+                    <div class="timeline-item">
+                        <span class="timeline-icon">○</span>
+                        <span class="timeline-text">Submitting form</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- VIEW 5: Complete -->
+        <div id="view-complete" class="view">
+            <div class="view-content">
+                <div class="success-animation">
+                    <div class="success-checkmark">
+                        <svg class="checkmark" viewBox="0 0 52 52">
+                            <circle class="checkmark-circle" cx="26" cy="26" r="25" fill="none"/>
+                            <path class="checkmark-check" fill="none" d="M14 27l7 7 16-16"/>
+                        </svg>
+                    </div>
+                </div>
+
+                <h2 class="success-title">Form Submitted Successfully!</h2>
+                <p class="success-description">Your form has been filled and submitted. Check your email for confirmation.</p>
+
+                <div class="success-details">
+                    <div class="detail-row">
+                        <span class="detail-label">Session ID:</span>
+                        <span class="detail-value" id="completedSessionId">-</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Completed:</span>
+                        <span class="detail-value" id="completedTime">-</span>
+                    </div>
+                </div>
+
+                <button class="btn btn-primary btn-full" onclick="resetApp()">
+                    <span class="btn-text">Fill Another Form</span>
+                    <span class="btn-icon">→</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Loading Overlay -->
+        <div class="loading-overlay" id="loadingOverlay" style="display: none;">
+            <div class="loading-spinner"></div>
+            <p class="loading-text" id="loadingText">Processing...</p>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
