@@ -15,8 +15,8 @@ const Header = ({ user, onLogout }) => {
             <path d="M8 16L14 22L24 10" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
             <defs>
               <linearGradient id="logoGrad" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
-                <stop stopColor="#86b89a"/>
-                <stop offset="1" stopColor="#4a8a64"/>
+                <stop stopColor="#8B5CF6"/>
+                <stop offset="1" stopColor="#F472B6"/>
               </linearGradient>
             </defs>
           </svg>

@@ -93,9 +93,9 @@ const DynamicReviewForm = ({
         return (
           <div role="radiogroup" className="radio-group">
             {(field.options || []).map((opt, i) => (
-              <label key={i}>
+              <label key={i} style={{ display: 'block', margin: '8px 0' }}>
                 <input type="radio" name={field.key} value={opt.value} checked={value === opt.value} onChange={(e) => handleChange(field.key, e.target.value)} required={field.required} />
-                <span>{opt.label}</span>
+                <span style={{ marginLeft: '8px' }}>{opt.label}</span>
               </label>
             ))}
           </div>
@@ -106,43 +106,36 @@ const DynamicReviewForm = ({
           return (
             <div className="checkbox-group">
               {field.options.map((opt, i) => (
-                <label key={i}>
+                <label key={i} style={{ display: 'block', margin: '8px 0' }}>
                   <input type="checkbox" name={field.key} value={opt.value} checked={checkedValues.includes(opt.value)}
                     onChange={(e) => {
                       const newVals = e.target.checked ? [...checkedValues, opt.value] : checkedValues.filter(v => v !== opt.value)
                       handleChange(field.key, newVals.join(','))
                     }} />
-                  <span>{opt.label}</span>
+                  <span style={{ marginLeft: '8px' }}>{opt.label}</span>
                 </label>
               ))}
             </div>
           )
         }
         return (
-          <label>
-            <input type="checkbox" checked={value === 'true' || value === true} onChange={(e) => handleChange(field.key, e.target.checked ? 'true' : 'false')} />
-            <span style={{ marginLeft: '8px' }}>{field.label}</span>
-          </label>
+          <label><input type="checkbox" checked={value === 'true' || value === true} onChange={(e) => handleChange(field.key, e.target.checked ? 'true' : 'false')} /><span style={{ marginLeft: '8px' }}>{field.label}</span></label>
         )
       case 'file':
-        return (
-          <div className="file-managed-indicator">
-            📎 Managed via File Uploads section above
-          </div>
-        )
+        return <div style={{ color: '#6366f1', fontSize: '0.85rem', padding: '0.5rem', background: 'rgba(99,102,241,0.06)', borderRadius: '6px' }}>📎 Managed via File Uploads section above</div>
       default:
         return <input {...common} type={sensitive ? 'password' : field.field_type} value={value} onChange={(e) => handleChange(field.key, e.target.value)} />
     }
   }
 
-  const getSourceBadgeClass = (source) => {
-    const map = { db: 'source-badge--db', session: 'source-badge--session', llm: 'source-badge--llm', none: 'source-badge--none' }
-    return map[source] || 'source-badge--none'
-  }
-
-  const getSourceBadgeText = (source) => {
-    const map = { db: 'From profile', session: 'From session', llm: 'AI matched', none: 'Not found' }
-    return map[source] || 'Not found'
+  const getSourceBadge = (source) => {
+    const badges = {
+      db: { text: 'From profile', color: '#155724', bg: '#d4edda' },
+      session: { text: 'From session', color: '#0c5460', bg: '#d1ecf1' },
+      llm: { text: 'AI matched', color: '#856404', bg: '#fff3cd' },
+      none: { text: 'Not found', color: '#6c757d', bg: '#e2e3e5' }
+    }
+    return badges[source] || badges.none
   }
 
   const fileFields = fields.filter(f => f.field_type === 'file')
@@ -152,28 +145,24 @@ const DynamicReviewForm = ({
   return (
     <form onSubmit={handleSubmit} className="dynamic-form">
 
-      {/* ── Section 1: Required — please complete (expanded, top priority) ── */}
+      {/* Section 1: Required — please complete (expanded, top priority) */}
       {editableRequired.length > 0 && (
-        <div className="dynamic-section">
-          <h3 className="required-section-heading">
-            <span className="required-section-badge">
+        <div style={{ marginBottom: '2rem' }}>
+          <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '1rem', color: '#dc2626', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <span style={{ background: '#fef2f2', padding: '0.25rem 0.5rem', borderRadius: '6px', border: '1px solid #fecaca' }}>
               ⚠ {editableRequired.length} Required — Please Complete
             </span>
           </h3>
-
           {editableRequired.map((field, idx) => {
             const sensitive = isSensitiveField(field.key)
             return (
-              <div
-                key={field.key}
-                className="required-field-row"
-                ref={idx === 0 ? firstRequiredRef : undefined}
-              >
-                <div className="field-row-header">
-                  <label className="field-row-label" htmlFor={field.key}>
+              <div key={field.key} ref={idx === 0 ? firstRequiredRef : undefined}
+                style={{ marginBottom: '1.5rem', paddingBottom: '1.5rem', borderBottom: '1px solid rgba(255,255,255,0.1)', borderLeft: '3px solid #f87171', paddingLeft: '1rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                  <label style={{ fontWeight: 600 }}>
                     {field.label}
-                    <span className="field-required-tag">* Required</span>
-                    {sensitive && <span className="field-sensitive-tag">🔒 Not saved</span>}
+                    <span style={{ color: '#f87171' }}> * Required</span>
+                    {sensitive && <span style={{ marginLeft: '0.5rem', fontSize: '0.75rem', color: '#9ca3af' }}>🔒 Not saved to profile</span>}
                   </label>
                 </div>
                 {renderField(field, idx === 0 ? firstRequiredRef : undefined)}
@@ -181,64 +170,54 @@ const DynamicReviewForm = ({
             )
           })}
 
-          <div className="save-inline-row">
-            <button
-              type="button"
-              className="btn btn-outline btn-sm"
-              onClick={handleSaveInline}
-              disabled={savingInline}
-            >
-              {savingInline ? 'Saving...' : '💾 Save these fields'}
-            </button>
-          </div>
+          {/* Save inline button */}
+          <button type="button" className="btn btn-outline" onClick={handleSaveInline} disabled={savingInline}
+            style={{ marginTop: '0.5rem', fontSize: '0.9rem' }}>
+            {savingInline ? 'Saving...' : '💾 Save these fields'}
+          </button>
         </div>
       )}
 
-      {/* ── Section 2: Already filled (collapsed by default) ── */}
+      {/* Section 2: Already filled (collapsed by default) */}
       {canonicalFields.length > 0 && (
-        <div className="dynamic-section">
-          <h3
-            className={`collapsible-heading heading-prefilled`}
-            onClick={() => setExpandPrefilled(!expandPrefilled)}
-            aria-expanded={expandPrefilled}
-          >
+        <div style={{ marginBottom: '2rem' }}>
+          <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.5rem', color: '#10b981', cursor: 'pointer', userSelect: 'none' }}
+            onClick={() => setExpandPrefilled(!expandPrefilled)}>
             {expandPrefilled ? '▾' : '▸'} ✓ Pre-filled ({canonicalFields.length})
           </h3>
-          {expandPrefilled && canonicalFields.map(field => (
-            <div key={field.key} className="prefilled-field-row">
-              <div className="field-row-header">
-                <label className="field-row-label" htmlFor={field.key}>
-                  {field.label}
-                  {field.required && <span className="field-required-tag">*</span>}
-                </label>
-                <span className={`source-badge ${getSourceBadgeClass(field.source)}`}>
-                  {getSourceBadgeText(field.source)}
-                </span>
+          {expandPrefilled && canonicalFields.map(field => {
+            const badge = getSourceBadge(field.source)
+            return (
+              <div key={field.key} style={{ marginBottom: '1.5rem', paddingBottom: '1.5rem', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                  <label style={{ fontWeight: 600 }}>
+                    {field.label}
+                    {field.required && <span style={{ color: '#f87171' }}> *</span>}
+                  </label>
+                  <span style={{ fontSize: '0.75rem', padding: '0.25rem 0.75rem', borderRadius: '12px', background: badge.bg, color: badge.color }}>
+                    {badge.text}
+                  </span>
+                </div>
+                {field.matched_profile_key && <div style={{ fontSize: '0.75rem', color: '#666', marginBottom: '0.5rem' }}>Mapped from: {field.matched_profile_key}</div>}
+                {renderField(field)}
               </div>
-              {field.matched_profile_key && (
-                <div className="field-mapped-from">Mapped from: {field.matched_profile_key}</div>
-              )}
-              {renderField(field)}
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
 
-      {/* ── Section 3: Optional (collapsed by default) ── */}
+      {/* Section 3: Optional (collapsed by default) */}
       {editableOptional.length > 0 && (
-        <div className="dynamic-section">
-          <h3
-            className="collapsible-heading heading-optional"
-            onClick={() => setExpandOptional(!expandOptional)}
-            aria-expanded={expandOptional}
-          >
+        <div style={{ marginBottom: '2rem' }}>
+          <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.5rem', color: '#6366f1', cursor: 'pointer', userSelect: 'none' }}
+            onClick={() => setExpandOptional(!expandOptional)}>
             {expandOptional ? '▾' : '▸'} ✎ Optional ({editableOptional.length})
           </h3>
           {expandOptional && editableOptional.map(field => (
-            <div key={field.key} className="optional-field-row">
-              <div className="field-row-header">
-                <label className="field-row-label" htmlFor={field.key}>{field.label}</label>
-                <span className="badge badge-optional">Optional</span>
+            <div key={field.key} style={{ marginBottom: '1.5rem', paddingBottom: '1.5rem', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                <label style={{ fontWeight: 600 }}>{field.label}</label>
+                <span style={{ fontSize: '0.75rem', padding: '0.25rem 0.75rem', borderRadius: '12px', background: '#e2e3e5', color: '#6c757d' }}>Optional</span>
               </div>
               {renderField(field)}
             </div>
@@ -246,16 +225,13 @@ const DynamicReviewForm = ({
         </div>
       )}
 
-      {/* ── Section 4: File uploads ── */}
+      {/* Section 4: File uploads */}
       {fileFields.length > 0 && (
-        <div className="dynamic-section">
-          <h3 className="collapsible-heading heading-optional">📎 File Uploads ({fileFields.length})</h3>
+        <div style={{ marginBottom: '2rem' }}>
+          <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '1rem', color: '#6366f1' }}>📎 File Uploads ({fileFields.length})</h3>
           {fileFields.map(field => (
-            <div key={field.key} className="optional-field-row">
-              <label className="field-row-label" htmlFor={field.key}>
-                {field.label}
-                {field.required && <span className="field-required-tag">*</span>}
-              </label>
+            <div key={field.key} style={{ marginBottom: '1rem', paddingBottom: '1rem', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+              <label style={{ fontWeight: 600 }}>{field.label}{field.required && <span style={{ color: '#f87171' }}> *</span>}</label>
               {renderField(field)}
             </div>
           ))}
@@ -263,12 +239,8 @@ const DynamicReviewForm = ({
       )}
 
       <div className="form-actions review-actions">
-        <button
-          type="submit"
-          className="btn btn-primary"
-          disabled={submitDisabled}
-          title={hasBlockers ? 'Resolve blockers first' : hasEmptyRequired ? 'Fill all required fields first' : ''}
-        >
+        <button type="submit" className="btn btn-primary" disabled={submitDisabled}
+          title={hasBlockers ? 'Resolve blockers first' : hasEmptyRequired ? 'Fill all required fields first' : ''}>
           {submitting ? 'Confirming...' :
             hasBlockers ? '🚫 Resolve Blockers First' :
             hasEmptyRequired ? `Fill ${editableRequired.filter(f => !localValues[f.key]).length} Required Fields First` :

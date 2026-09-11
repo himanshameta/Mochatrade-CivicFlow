@@ -126,7 +126,7 @@ async def confirm_document(
     payload: dict = Depends(require_auth)
 ):
     """
-    Saves the confirmed document and fields to the user profile.
+    Saves the confirmed document and fields to the user profile, overriding manual profile sections with OCR data.
     """
     user_id = payload["sub"]
     db = await get_db()
@@ -149,10 +149,7 @@ async def confirm_document(
     fields_to_save = request.corrected_fields if request.corrected_fields is not None else doc_meta.get("ocr_results", {})
 
     # Encrypt the fields to save in the profile
-    # For now, we store them in the `uploaded_documents` array inside UserProfileData
-    # However, some fields like `aadhaar_last4` might need to go to `identity`
-    # We will just append the reference.
-    from utils.encryption import encrypt_dict_fields
+    from utils.encryption import encrypt_dict_fields, encrypt_profile
     encrypted_fields = encrypt_dict_fields(fields_to_save, user_id, list(fields_to_save.keys()))
     
     doc_ref = UploadedDocumentRef(
@@ -163,20 +160,72 @@ async def confirm_document(
         ocr_extracted_fields=encrypted_fields,
         is_verified=True
     )
-    
-    # Update profile
-    result = await db.user_profiles.update_one(
-        {"user_id": user_id},
-        {"$push": {"uploaded_documents": doc_ref.model_dump()}}
-    )
-    
-    # If profile doesn't exist, create it
-    if result.matched_count == 0:
-        from models.user_models import UserProfileData
-        new_profile = UserProfileData(user_id=user_id, uploaded_documents=[doc_ref])
-        await db.user_profiles.insert_one(new_profile.model_dump())
 
-    return ok("Document confirmed and saved to profile")
+    # ── Load or create profile and override sections with OCR data ──
+    from models.user_models import UserProfileData, BasicInfo, ContactInfo, IdentityInfo, EducationInfo
+    from utils.profile_normalizer import normalize_profile_update_payload
+
+    profile_doc = await db.user_profiles.find_one({"user_id": user_id})
+    if profile_doc:
+        profile_doc.pop("_id", None)
+        try:
+            profile_data = UserProfileData(**profile_doc)
+        except Exception as e:
+            print(f"[Confirm Document] Failed to parse existing profile, creating new: {e}")
+            profile_data = UserProfileData(user_id=user_id)
+    else:
+        profile_data = UserProfileData(user_id=user_id)
+
+    # Normalize/group fields from the OCR document
+    normalized, _ = normalize_profile_update_payload(fields_to_save)
+
+    section_models = {
+        "basic_info": (profile_data.basic_info, BasicInfo),
+        "contact": (profile_data.contact, ContactInfo),
+        "identity": (profile_data.identity, IdentityInfo),
+        "education": (profile_data.education, EducationInfo),
+    }
+
+    # Override keys in profile sections with normalized OCR values
+    fields_copied = []
+    for section_name, (section_obj, model_cls) in section_models.items():
+        section_data = normalized.get(section_name, {})
+        if not section_data:
+            continue
+
+        model_fields = set(model_cls.model_fields.keys())
+        for key, val in section_data.items():
+            if key.startswith("_"):
+                continue
+            if key in model_fields:
+                setattr(section_obj, key, val)
+                fields_copied.append(f"{section_name}.{key}")
+
+    print(f"[Confirm Document] Overrode {len(fields_copied)} manual profile fields from OCR data: {fields_copied}")
+
+    # Append doc ref to uploaded_documents (avoid duplicates)
+    existing_docs = {d.doc_id for d in profile_data.uploaded_documents}
+    if doc_id not in existing_docs:
+        profile_data.uploaded_documents.append(doc_ref)
+    else:
+        # Update existing ref
+        profile_data.uploaded_documents = [
+            (doc_ref if d.doc_id == doc_id else d) for d in profile_data.uploaded_documents
+        ]
+
+    profile_data.updated_at = datetime.utcnow()
+
+    # Encrypt profile sections and save to database
+    profile_dict = profile_data.model_dump()
+    encrypted_dict = encrypt_profile(profile_dict, user_id)
+
+    await db.user_profiles.update_one(
+        {"user_id": user_id},
+        {"$set": encrypted_dict},
+        upsert=True
+    )
+
+    return ok("Document confirmed and profile updated successfully")
 
 
 @router.get("/list", summary="List uploaded documents")
