@@ -51,56 +51,93 @@ const DocumentList = ({ user, showToast }) => {
   return (
     <div className="view active">
       <div className="page-container">
+
+        {/* ── Hero ── */}
         <div className="page-hero">
           <h2>My Documents</h2>
-          <p>Your private document vault — stored locally only</p>
+          <p>Your private document vault — stored securely, never shared</p>
         </div>
 
+        {/* ── Actions row ── */}
         <div className="documents-actions">
-          <button className="btn btn-primary" onClick={() => navigate('/documents/upload')}>+ Upload New Document</button>
+          <button
+            className="btn btn-primary"
+            onClick={() => navigate('/documents/upload')}
+            aria-label="Upload new document"
+          >
+            + Upload Document
+          </button>
         </div>
 
-        {/* Category tabs */}
+        {/* ── Category filter tabs ── */}
         {documents.length > 0 && (
-          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '1.5rem' }}>
+          <div className="doc-filter-tabs" role="tablist" aria-label="Filter by category">
             {categories.map(cat => (
-              <button key={cat} onClick={() => setActiveCategory(cat)}
-                className={`btn btn-sm ${activeCategory === cat ? 'btn-primary' : 'btn-outline'}`}
-                style={{ textTransform: 'capitalize', fontSize: '0.85rem' }}>
-                {cat === 'all' ? `📁 All (${documents.length})` : `${CATEGORY_ICONS[cat] || '📄'} ${CATEGORY_LABELS[cat] || cat} (${documents.filter(d => d.category === cat).length})`}
+              <button
+                key={cat}
+                role="tab"
+                aria-selected={activeCategory === cat}
+                className={`doc-filter-tab${activeCategory === cat ? ' active' : ''}`}
+                onClick={() => setActiveCategory(cat)}
+              >
+                {cat === 'all'
+                  ? `All (${documents.length})`
+                  : `${CATEGORY_ICONS[cat] || '📄'} ${CATEGORY_LABELS[cat] || cat} (${documents.filter(d => d.category === cat).length})`
+                }
               </button>
             ))}
           </div>
         )}
 
+        {/* ── Grid or empty state ── */}
         {filtered.length === 0 ? (
-          <div className="glass-card empty-state">
+          <div className="empty-state">
             <div className="empty-icon">📄</div>
             <h3>{documents.length === 0 ? 'No Documents Yet' : 'No documents in this category'}</h3>
-            <p>Upload your first document to get started with automated form filling</p>
-            <button className="btn btn-primary" onClick={() => navigate('/documents/upload')}>Upload Document</button>
+            <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
+              Upload your first document to get started with automated form filling
+            </p>
+            <button className="btn btn-primary" onClick={() => navigate('/documents/upload')}>
+              Upload Document
+            </button>
           </div>
         ) : (
           <div className="documents-grid">
             {filtered.map(doc => (
-              <div key={doc.document_id} className="document-card glass-card">
-                <div className="document-icon">{CATEGORY_ICONS[doc.category] || '📄'}</div>
-                <div className="document-info">
-                  <h4>{doc.display_name}</h4>
-                  <p className="document-filename">{doc.original_filename}</p>
-                  <p style={{ fontSize: '0.75rem', margin: '0.25rem 0' }}>
-                    <span style={{ padding: '0.15rem 0.4rem', borderRadius: '4px', background: 'rgba(99,102,241,0.1)', color: '#6366f1', fontSize: '0.7rem', textTransform: 'capitalize' }}>
-                      {(doc.category || 'other').replace(/_/g, ' ')}
-                    </span>
-                    {doc.subcategory && <span style={{ marginLeft: '0.5rem', color: '#6b7280' }}>{doc.subcategory}</span>}
-                  </p>
-                  <p className="document-date">Uploaded: {new Date(doc.created_at).toLocaleDateString()}</p>
-                  {doc.size_bytes > 0 && <p style={{ fontSize: '0.7rem', color: '#9ca3af' }}>{(doc.size_bytes / 1024).toFixed(1)} KB</p>}
+              <article key={doc.document_id} className="document-card">
+                <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-start' }}>
+                  <div className="document-icon">
+                    {CATEGORY_ICONS[doc.category] || '📄'}
+                  </div>
+                  <div className="document-info">
+                    <h4>{doc.display_name}</h4>
+                    <p className="document-filename">{doc.original_filename}</p>
+                    <div className="document-meta">
+                      <span className="doc-category-badge">
+                        {(doc.category || 'other').replace(/_/g, ' ')}
+                      </span>
+                      {doc.subcategory && (
+                        <span className="text-muted" style={{ fontSize: '0.72rem' }}>{doc.subcategory}</span>
+                      )}
+                      {doc.size_bytes > 0 && (
+                        <span className="doc-size">{(doc.size_bytes / 1024).toFixed(1)} KB</span>
+                      )}
+                    </div>
+                    <p className="document-date">
+                      Uploaded: {new Date(doc.created_at).toLocaleDateString()}
+                    </p>
+                  </div>
                 </div>
                 <div className="document-actions">
-                  <button className="btn btn-sm btn-danger" onClick={() => handleDelete(doc.document_id)}>Delete</button>
+                  <button
+                    className="btn btn-sm btn-danger"
+                    onClick={() => handleDelete(doc.document_id)}
+                    aria-label={`Delete ${doc.display_name}`}
+                  >
+                    Delete
+                  </button>
                 </div>
-              </div>
+              </article>
             ))}
           </div>
         )}
