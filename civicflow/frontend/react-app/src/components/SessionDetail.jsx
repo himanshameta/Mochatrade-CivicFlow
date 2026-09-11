@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import axios from 'axios'
+import { ArrowRight, AlertTriangle } from 'lucide-react'
 
 const SessionDetail = ({ showToast }) => {
   const { sessionId } = useParams()
@@ -89,7 +90,7 @@ const SessionDetail = ({ showToast }) => {
 
           {session.missing_fields && session.missing_fields.length > 0 && (
             <div className="missing-fields-panel">
-              <h4>⚠ Missing Required Fields</h4>
+              <h4 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><AlertTriangle size={18} /> Missing Required Fields</h4>
               <ul>
                 {session.missing_fields.map((field, i) => (
                   <li key={i}>{field.key || field.label}</li>
@@ -111,7 +112,7 @@ const SessionDetail = ({ showToast }) => {
             </button>
             {(session.status === 'awaiting_confirmation' || session.status === 'confirmed' || session.status === 'needs_user_input') && (
               <button className="btn btn-primary" onClick={handleContinue}>
-                Continue →
+                <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>Continue <ArrowRight size={16} /></span>
               </button>
             )}
           </div>

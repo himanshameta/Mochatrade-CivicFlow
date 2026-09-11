@@ -9,17 +9,8 @@ const Header = ({ user, onLogout }) => {
   return (
     <header className="app-header">
       <div className="header-inner">
-        <Link to="/dashboard" className="header-logo">
-          <svg width="28" height="28" viewBox="0 0 32 32" fill="none">
-            <rect width="32" height="32" rx="8" fill="url(#logoGrad)"/>
-            <path d="M8 16L14 22L24 10" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
-            <defs>
-              <linearGradient id="logoGrad" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
-                <stop stopColor="#8B5CF6"/>
-                <stop offset="1" stopColor="#F472B6"/>
-              </linearGradient>
-            </defs>
-          </svg>
+        <Link to="/dashboard" className="header-logo d-flex align-items-center">
+          <img src="/logo.png" alt="CivicFlow" className='mt-{-14px}' height={60} />
           <span className="logo-text">CivicFlow</span>
         </Link>
 
@@ -41,9 +32,13 @@ const Header = ({ user, onLogout }) => {
         <div className="header-right">
           <div className="user-pill">
             <div className="user-avatar">
-              {user?.name?.[0]?.toUpperCase() || 'U'}
+              {(user?.name || user?.email?.split('@')[0] || 'U')[0].toUpperCase()}
             </div>
-            <span>{user?.name || 'User'}</span>
+            <span>
+              {user?.name || (user?.email 
+                ? user.email.split('@')[0].split(/[._-]/).map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ') 
+                : 'User')}
+            </span>
           </div>
           <button 
             className="btn-icon-only" 

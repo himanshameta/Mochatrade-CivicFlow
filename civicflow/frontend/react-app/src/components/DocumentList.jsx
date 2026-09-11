@@ -2,9 +2,11 @@ import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import axios from 'axios'
 
+import { FileText, IdCard, Home, GraduationCap, FileBadge, Camera, ClipboardList, CircleDollarSign, Hospital } from 'lucide-react'
+
 const CATEGORY_ICONS = {
-  identity: '🆔', address_proof: '🏠', education: '🎓', certificate: '📜',
-  photo: '📷', resume: '📋', financial: '💰', medical: '🏥', other: '📄',
+  identity: <IdCard size={18} />, address_proof: <Home size={18} />, education: <GraduationCap size={18} />, certificate: <FileBadge size={18} />,
+  photo: <Camera size={18} />, resume: <ClipboardList size={18} />, financial: <CircleDollarSign size={18} />, medical: <Hospital size={18} />, other: <FileText size={18} />,
 }
 
 const CATEGORY_LABELS = {
@@ -82,7 +84,7 @@ const DocumentList = ({ user, showToast }) => {
               >
                 {cat === 'all'
                   ? `All (${documents.length})`
-                  : `${CATEGORY_ICONS[cat] || '📄'} ${CATEGORY_LABELS[cat] || cat} (${documents.filter(d => d.category === cat).length})`
+                  : <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>{CATEGORY_ICONS[cat] || <FileText size={16} />} {CATEGORY_LABELS[cat] || cat} ({documents.filter(d => d.category === cat).length})</span>
                 }
               </button>
             ))}
@@ -92,7 +94,7 @@ const DocumentList = ({ user, showToast }) => {
         {/* ── Grid or empty state ── */}
         {filtered.length === 0 ? (
           <div className="empty-state">
-            <div className="empty-icon">📄</div>
+            <div className="empty-icon"><FileText size={48} /></div>
             <h3>{documents.length === 0 ? 'No Documents Yet' : 'No documents in this category'}</h3>
             <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
               Upload your first document to get started with automated form filling
@@ -107,7 +109,7 @@ const DocumentList = ({ user, showToast }) => {
               <article key={doc.document_id} className="document-card">
                 <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-start' }}>
                   <div className="document-icon">
-                    {CATEGORY_ICONS[doc.category] || '📄'}
+                    {CATEGORY_ICONS[doc.category] || <FileText size={24} />}
                   </div>
                   <div className="document-info">
                     <h4>{doc.display_name}</h4>

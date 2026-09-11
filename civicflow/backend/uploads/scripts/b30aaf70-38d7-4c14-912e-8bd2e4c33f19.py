@@ -9,7 +9,7 @@ import sys
 import os
 
 # Add backend directory to path so 'agents', 'utils', 'models' are importable
-sys.path.insert(0, "C:\\Users\\khatr\\Downloads\\faraway-hack-main\\faraway-hack-main\\civicflow\\backend")
+sys.path.insert(0, "D:\\my stuff\\faraway3\\civicflow\\backend")
 
 async def main():
     async with async_playwright() as p:
@@ -19,14 +19,14 @@ async def main():
 
         try:
             print("EVENT:navigation:Loading page")
-            await page.goto("https://demoqa.com/automation-practice-form", wait_until="networkidle")
+            await page.goto("https://aaplesarkar.mahaonline.gov.in/en/Login/Login", wait_until="networkidle")
             await asyncio.sleep(2)
 
             # Fill form fields
             # Fill: First Name
             print('EVENT:field_filling:First Name')
             try:
-                await page.locator("#firstName").fill("mihir")
+                await page.locator("#txtFirstName").fill("kaivalya")
                 await asyncio.sleep(0.3)
             except Exception as e:
                 print('EVENT:field_error:Failed to fill First Name: ' + str(e))
@@ -34,57 +34,30 @@ async def main():
             # Fill: Last Name
             print('EVENT:field_filling:Last Name')
             try:
-                await page.locator("#lastName").fill("khatri")
+                await page.locator("#txtLastName").fill("sonawane")
                 await asyncio.sleep(0.3)
             except Exception as e:
                 print('EVENT:field_error:Failed to fill Last Name: ' + str(e))
 
-            # Fill: Name@Example.Com
-            print('EVENT:field_filling:Name@Example.Com')
+            # Fill: Age
+            print('EVENT:field_filling:Age')
             try:
-                await page.locator("#userEmail").fill("test@test.com")
+                await page.locator("#txtAge").fill("20")
                 await asyncio.sleep(0.3)
             except Exception as e:
-                print('EVENT:field_error:Failed to fill Name@Example.Com: ' + str(e))
+                print('EVENT:field_error:Failed to fill Age: ' + str(e))
 
-            # Fill: Male
-            print('EVENT:field_filling:Male')
+            # Fill: Contact Number
+            print('EVENT:field_filling:Contact Number')
             try:
-                radio = page.locator("[name=\"gender\"][value=\"Male\"]")
-                await radio.check()
+                await page.locator("#txtContact").fill("07498148196")
                 await asyncio.sleep(0.3)
             except Exception as e:
-                print('EVENT:field_error:Failed to fill Male: ' + str(e))
-
-            # Fill: Mobile Number
-            print('EVENT:field_filling:Mobile Number')
-            try:
-                await page.locator("#userNumber").fill("9226570903")
-                await asyncio.sleep(0.3)
-            except Exception as e:
-                print('EVENT:field_error:Failed to fill Mobile Number: ' + str(e))
-
-            # Fill: Unnamed Field
-            print('EVENT:field_filling:Unnamed Field')
-            try:
-                # File upload: Unnamed Field — resolved from vault/temp path
-                file_input = page.locator("#uploadPicture")
-                await file_input.set_input_files("C:\\Users\\khatr\\Downloads\\faraway-hack-main\\faraway-hack-main\\civicflow\\backend\\uploads\\user_docs\\3b8c9c44-2e17-4fd5-bcf0-89ef5d264a3e\\identity\\20260614T201212__Aadhar.jpg")
-                await asyncio.sleep(0.5)
-            except Exception as e:
-                print('EVENT:field_error:Failed to fill Unnamed Field: ' + str(e))
-
-            # Fill: Current Address
-            print('EVENT:field_filling:Current Address')
-            try:
-                await page.locator("#currentAddress").fill("789,Space, Colony")
-                await asyncio.sleep(0.3)
-            except Exception as e:
-                print('EVENT:field_error:Failed to fill Current Address: ' + str(e))
+                print('EVENT:field_error:Failed to fill Contact Number: ' + str(e))
 
             # Submit form
             print("EVENT:submission:Clicking submit")
-            submit_btn = page.locator("#submit")
+            submit_btn = page.locator("button[type='submit']")
             await submit_btn.click()
             await asyncio.sleep(3)
 
@@ -95,7 +68,7 @@ async def main():
                 print(f"EVENT:captcha_detected:{captcha_info['type']}:{captcha_info['reason']}")
                 # Poll for resume signal
                 while True:
-                    signal = await check_resume_signal("1dffaa58-d246-46f0-a6ca-28497e5aa3bb")
+                    signal = await check_resume_signal("b30aaf70-38d7-4c14-912e-8bd2e4c33f19")
                     if signal == "captcha_solved":
                         print("EVENT:resume:Continuing after CAPTCHA")
                         break

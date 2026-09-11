@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
+import { Paperclip, AlertTriangle, Lock, ChevronDown, ChevronRight, Check, ArrowRight } from 'lucide-react'
 
 const SENSITIVE_PATTERNS = [/password/i, /^pwd$/i, /secret/i, /^otp$/i, /captcha/i, /cvv/i]
 
@@ -127,7 +128,7 @@ const DynamicReviewForm = ({
       case 'file':
         return (
           <div className="file-managed-indicator">
-            📎 Managed via File Uploads section above
+            <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><Paperclip size={14} /> Managed via File Uploads section above</span>
           </div>
         )
       default:
@@ -157,7 +158,7 @@ const DynamicReviewForm = ({
         <div className="dynamic-section">
           <h3 className="required-section-heading">
             <span className="required-section-badge">
-              ⚠ {editableRequired.length} Required — Please Complete
+              <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><AlertTriangle size={18} /> {editableRequired.length} Required — Please Complete</span>
             </span>
           </h3>
 
@@ -173,7 +174,7 @@ const DynamicReviewForm = ({
                   <label className="field-row-label" htmlFor={field.key}>
                     {field.label}
                     <span className="field-required-tag">* Required</span>
-                    {sensitive && <span className="field-sensitive-tag">🔒 Not saved</span>}
+                    {sensitive && <span className="field-sensitive-tag"><Lock size={12} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '2px' }} /> Not saved</span>}
                   </label>
                 </div>
                 {renderField(field, idx === 0 ? firstRequiredRef : undefined)}
@@ -202,7 +203,7 @@ const DynamicReviewForm = ({
             onClick={() => setExpandPrefilled(!expandPrefilled)}
             aria-expanded={expandPrefilled}
           >
-            {expandPrefilled ? '▾' : '▸'} ✓ Pre-filled ({canonicalFields.length})
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>{expandPrefilled ? <ChevronDown size={16} /> : <ChevronRight size={16} />} <Check size={14} /> Pre-filled ({canonicalFields.length})</div>
           </h3>
           {expandPrefilled && canonicalFields.map(field => (
             <div key={field.key} className="prefilled-field-row">
@@ -249,7 +250,7 @@ const DynamicReviewForm = ({
       {/* ── Section 4: File uploads ── */}
       {fileFields.length > 0 && (
         <div className="dynamic-section">
-          <h3 className="collapsible-heading heading-optional">📎 File Uploads ({fileFields.length})</h3>
+          <h3 className="collapsible-heading heading-optional" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><Paperclip size={18} /> File Uploads ({fileFields.length})</h3>
           {fileFields.map(field => (
             <div key={field.key} className="optional-field-row">
               <label className="field-row-label" htmlFor={field.key}>
@@ -272,7 +273,7 @@ const DynamicReviewForm = ({
           {submitting ? 'Confirming...' :
             hasBlockers ? '🚫 Resolve Blockers First' :
             hasEmptyRequired ? `Fill ${editableRequired.filter(f => !localValues[f.key]).length} Required Fields First` :
-            'Confirm & Start Filling →'}
+            <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>Confirm & Start Filling <ArrowRight size={16} /></span>}
         </button>
       </div>
     </form>

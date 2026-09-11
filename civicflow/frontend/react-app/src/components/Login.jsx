@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import axios from 'axios'
+import { ArrowRight, Bot, FileText, Lock, Globe } from 'lucide-react'
 
 const Login = ({ onLogin, showToast }) => {
   const [activeTab, setActiveTab] = useState('login')
@@ -65,19 +66,19 @@ const Login = ({ onLogin, showToast }) => {
 
           <div className="brand-features">
             <div className="brand-feature">
-              <div className="feature-icon" aria-hidden="true">🤖</div>
+              <div className="feature-icon" aria-hidden="true"><Bot size={18} /></div>
               <span>Sahayak AI guides you step by step</span>
             </div>
             <div className="brand-feature">
-              <div className="feature-icon" aria-hidden="true">📄</div>
+              <div className="feature-icon" aria-hidden="true"><FileText size={18} /></div>
               <span>Auto-extract data from your documents</span>
             </div>
             <div className="brand-feature">
-              <div className="feature-icon" aria-hidden="true">🔒</div>
+              <div className="feature-icon" aria-hidden="true"><Lock size={18} /></div>
               <span>AES-256 encrypted, zero-trust storage</span>
             </div>
             <div className="brand-feature">
-              <div className="feature-icon" aria-hidden="true">🌐</div>
+              <div className="feature-icon" aria-hidden="true"><Globe size={18} /></div>
               <span>Works with any form on any website</span>
             </div>
           </div>
@@ -140,7 +141,7 @@ const Login = ({ onLogin, showToast }) => {
                 />
               </div>
               <button type="submit" className="btn btn-primary btn-full" disabled={loading}>
-                {loading ? <><span className="btn-loader"></span> Signing in...</> : 'Sign In →'}
+                {loading ? <><span className="btn-loader"></span> Signing in...</> : <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>Sign In <ArrowRight size={16} /></span>}
               </button>
             </form>
           ) : (
@@ -215,7 +216,7 @@ const Login = ({ onLogin, showToast }) => {
                 </div>
               </div>
               <button type="submit" className="btn btn-primary btn-full" disabled={loading}>
-                {loading ? <><span className="btn-loader"></span> Creating...</> : 'Create Account →'}
+                {loading ? <><span className="btn-loader"></span> Creating...</> : <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>Create Account <ArrowRight size={16} /></span>}
               </button>
             </form>
           )}

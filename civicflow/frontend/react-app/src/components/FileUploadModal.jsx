@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react'
 import axios from 'axios'
+import { Upload, FileText, UploadCloud } from 'lucide-react'
 
 const CATEGORIES = [
   { value: 'identity', label: 'Identity' },
@@ -75,7 +76,7 @@ const FileUploadModal = ({ sessionId, fieldName, fieldLabel, accept, onClose, on
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 520 }}>
         <div className="modal-header">
-          <h3>📤 Upload File</h3>
+          <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><Upload size={20} /> Upload File</h3>
           <button className="modal-close" onClick={onClose}>×</button>
         </div>
         <p style={{ color: '#6b7280', fontSize: '0.9rem', marginBottom: '1rem' }}>
@@ -92,10 +93,10 @@ const FileUploadModal = ({ sessionId, fieldName, fieldLabel, accept, onClose, on
           onClick={() => inputRef.current?.click()}
         >
           {file ? (
-            <div>📄 <strong>{file.name}</strong> ({(file.size / 1024).toFixed(1)} KB)</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><FileText size={16} /> <strong>{file.name}</strong> ({(file.size / 1024).toFixed(1)} KB)</div>
           ) : (
             <div>
-              <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>📁</div>
+              <div style={{ marginBottom: '0.5rem' }}><UploadCloud size={48} color="var(--accent)" /></div>
               <div>Drag & drop or click to browse</div>
             </div>
           )}

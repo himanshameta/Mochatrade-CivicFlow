@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import axios from 'axios'
+import { ArrowLeft, AlertTriangle, Paperclip, Check, FileText, FolderOpen, Upload } from 'lucide-react'
 import DynamicReviewForm from './DynamicReviewForm'
 import FileUploadModal from './FileUploadModal'
 import DocumentPickerModal from './DocumentPickerModal'
@@ -240,7 +241,7 @@ const FormReview = ({ showToast }) => {
             <h2 className="exec-status-heading state-failed">Pipeline Failed</h2>
             <p style={{ marginTop: '1rem', marginBottom: '2rem' }}>{errorMessage}</p>
             <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem' }}>
-              <button className="btn btn-outline" onClick={() => navigate('/dashboard')}>← Back to Dashboard</button>
+              <button className="btn btn-outline" onClick={() => navigate('/dashboard')}><ArrowLeft size={16} /> Back to Dashboard</button>
               <button className="btn btn-primary" onClick={handleRetry}>Retry Analysis</button>
             </div>
           </div>
@@ -263,7 +264,7 @@ const FormReview = ({ showToast }) => {
       <div className="view active">
         <div className="page-container">
           <div className="glass-card review-warning-panel" style={{ borderColor: 'rgba(252,211,77,0.3)' }}>
-            <h2 style={{ color: 'var(--warning)' }}>⚠ Debug: Unexpected Response</h2>
+            <h2 style={{ color: 'var(--warning)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}><AlertTriangle size={24} /> Debug: Unexpected Response</h2>
             <pre style={{ background: 'var(--surface-alt)', color: 'var(--text-secondary)', padding: '1rem', borderRadius: 'var(--radius-sm)', overflow: 'auto', maxHeight: '400px', fontSize: '0.78rem', fontFamily: 'var(--font-mono)', marginTop: '1rem' }}>
               {JSON.stringify(debugPayload, null, 2)}
             </pre>
@@ -300,100 +301,19 @@ const FormReview = ({ showToast }) => {
             <p className="font-mono" style={{ fontSize: '0.82rem' }}>{confirmData.page_title || confirmData.url}</p>
           </div>
 
-          {/* ── Summary stats ── */}
-          {summary && (
-            <div className="review-stats-row">
-              <div className="review-stat-card stat-prefilled">
-                <div className="review-stat-number">{summary.prefilled_count}</div>
-                <div className="review-stat-label">Pre-filled</div>
-              </div>
-              <div className={`review-stat-card stat-missing${summary.missing_required_count > 0 ? '' : ' stat-prefilled'}`}>
-                <div className="review-stat-number">{summary.missing_required_count}</div>
-                <div className="review-stat-label">Missing Required</div>
-              </div>
-              <div className="review-stat-card stat-optional">
-                <div className="review-stat-number">{summary.optional_unfilled_count || 0}</div>
-                <div className="review-stat-label">Optional</div>
-              </div>
-              <div className="review-stat-card stat-total">
-                <div className="review-stat-number">{summary.total_fields}</div>
-                <div className="review-stat-label">Total Fields</div>
-              </div>
-            </div>
-          )}
+
 
           {/* ── Warnings ── */}
           {warnings.length > 0 && (
             <div className="review-warning-panel">
-              <h4>⚠ {warnings.length} Warning{warnings.length > 1 ? 's' : ''}</h4>
+              <h4 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><AlertTriangle size={18} /> {warnings.length} Warning{warnings.length > 1 ? 's' : ''}</h4>
               <ul>
                 {warnings.map((w, i) => <li key={i}>{w}</li>)}
               </ul>
             </div>
           )}
 
-          {/* ── File requirements ── */}
-          {fileRequirements.length > 0 && (
-            <div className="file-req-panel">
-              <div className="file-req-panel-header">
-                <span>📎</span>
-                <h4>File Uploads ({fileRequirements.length})</h4>
-              </div>
 
-              {fileRequirements.map((fr, i) => {
-                const sel = selectedDocs[fr.key]
-                return (
-                  <div
-                    key={i}
-                    className={`file-req-item${sel ? ' is-selected' : ''}${fr.required && !sel ? ' is-required' : ''}`}
-                  >
-                    <div className="file-req-item-header">
-                      <span className="file-req-name">
-                        {fr.label}
-                        {fr.required && <span className="field-required-tag"> *</span>}
-                        {fr.accept && <span className="file-req-accept">({fr.accept})</span>}
-                      </span>
-                      {sel ? (
-                        <span className="badge badge-prefilled">✓ Selected</span>
-                      ) : fr.required ? (
-                        <span className="badge badge-missing">Required</span>
-                      ) : (
-                        <span className="badge badge-optional">Optional</span>
-                      )}
-                    </div>
-
-                    {sel ? (
-                      <div className="file-req-selected-info">
-                        <span className="file-req-selected-name">
-                          📄 {sel.display_name || sel.document_id}
-                        </span>
-                        <button
-                          className="btn btn-sm btn-outline"
-                          onClick={() => setSelectedDocs(prev => { const n = { ...prev }; delete n[fr.key]; return n })}
-                        >
-                          Change
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="file-req-actions">
-                        <button className="btn btn-sm btn-outline" onClick={() => setActiveModal({ type: 'picker', field: fr })}>
-                          📂 Choose from My Documents
-                          {(fr.matched_saved_documents || []).length > 0 && (
-                            <span style={{ marginLeft: '0.35rem', color: 'var(--success)', fontSize: '0.75rem' }}>
-                              ({fr.matched_saved_documents.length} match{fr.matched_saved_documents.length > 1 ? 'es' : ''})
-                            </span>
-                          )}
-                        </button>
-                        <button className="btn btn-sm btn-primary" onClick={() => setActiveModal({ type: 'upload', field: fr })}>
-                          📤 Upload New
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          )}
 
           {/* ── File modals ── */}
           {activeModal?.type === 'upload' && (
@@ -443,10 +363,99 @@ const FormReview = ({ showToast }) => {
 
             <div className="review-actions" style={{ marginTop: '1rem', justifyContent: 'flex-start' }}>
               <button type="button" className="btn btn-outline" onClick={() => navigate('/dashboard')} disabled={submitting}>
-                ← Cancel
+                <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><ArrowLeft size={16} /> Cancel</span>
               </button>
             </div>
           </div>
+        </div>
+
+        <div className="form-review-sidebar">
+          {/* ── Summary stats ── */}
+          {summary && (
+            <div className="review-stats-row" style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '1.5rem' }}>
+              <div className="glass-card review-stat-card stat-prefilled" style={{ padding: '1.25rem' }}>
+                <div className="review-stat-number" style={{ fontSize: '2rem', marginBottom: '0.5rem', color: 'var(--success)' }}>{summary.prefilled_count}</div>
+                <div className="review-stat-label">Pre-filled</div>
+              </div>
+              <div className={`glass-card review-stat-card stat-missing${summary.missing_required_count > 0 ? '' : ' stat-prefilled'}`} style={{ padding: '1.25rem' }}>
+                <div className="review-stat-number" style={{ fontSize: '2rem', marginBottom: '0.5rem', color: 'var(--danger)' }}>{summary.missing_required_count}</div>
+                <div className="review-stat-label">Missing Required</div>
+              </div>
+              <div className="glass-card review-stat-card stat-optional" style={{ padding: '1.25rem' }}>
+                <div className="review-stat-number" style={{ fontSize: '2rem', marginBottom: '0.5rem', color: 'var(--info)' }}>{summary.optional_unfilled_count || 0}</div>
+                <div className="review-stat-label">Optional</div>
+              </div>
+              <div className="glass-card review-stat-card stat-total" style={{ padding: '1.25rem' }}>
+                <div className="review-stat-number" style={{ fontSize: '2rem', marginBottom: '0.5rem', color: 'var(--foreground)' }}>{summary.total_fields}</div>
+                <div className="review-stat-label">Total Fields</div>
+              </div>
+            </div>
+          )}
+
+          {/* ── File requirements ── */}
+          {fileRequirements.length > 0 && (
+            <div className="glass-card file-req-panel" style={{ padding: '1.25rem' }}>
+              <div className="file-req-panel-header" style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Paperclip size={20} style={{ color: 'var(--accent)' }} />
+                <h4 style={{ margin: 0, color: 'var(--accent)' }}>File Uploads ({fileRequirements.length})</h4>
+              </div>
+
+              {fileRequirements.map((fr, i) => {
+                const sel = selectedDocs[fr.key]
+                return (
+                  <div
+                    key={i}
+                    className={`file-req-item${sel ? ' is-selected' : ''}${fr.required && !sel ? ' is-required' : ''}`}
+                    style={{ marginBottom: '1rem', padding: '1rem', border: '2px solid var(--border)', borderRadius: 'var(--radius-sm)', background: 'var(--input)' }}
+                  >
+                    <div className="file-req-item-header" style={{ marginBottom: '0.75rem' }}>
+                      <span className="file-req-name" style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 700, color: 'var(--foreground)' }}>
+                        {fr.label}
+                        {fr.required && <span className="field-required-tag" style={{ color: 'var(--danger)' }}> *</span>}
+                        {fr.accept && <span className="file-req-accept" style={{ fontSize: '0.75rem', color: 'var(--muted-foreground)' }}><br/>({fr.accept})</span>}
+                      </span>
+                      {sel ? (
+                        <span className="badge badge-prefilled" style={{ display: 'flex', alignItems: 'center', gap: '0.2rem' }}><Check size={12} /> Selected</span>
+                      ) : fr.required ? (
+                        <span className="badge badge-missing">Required</span>
+                      ) : (
+                        <span className="badge badge-optional">Optional</span>
+                      )}
+                    </div>
+
+                    {sel ? (
+                      <div className="file-req-selected-info" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                        <span className="file-req-selected-name" style={{ fontSize: '0.85rem', color: 'var(--success)', fontWeight: 600 }}>
+                          <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}><FileText size={14} /> {sel.display_name || sel.document_id}</span>
+                        </span>
+                        <button
+                          className="btn btn-sm btn-outline"
+                          onClick={() => setSelectedDocs(prev => { const n = { ...prev }; delete n[fr.key]; return n })}
+                          style={{ width: '100%' }}
+                        >
+                          Change
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="file-req-actions" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                        <button className="btn btn-sm btn-outline" onClick={() => setActiveModal({ type: 'picker', field: fr })}>
+                          <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}><FolderOpen size={14} /> My Documents</span>
+                          {(fr.matched_saved_documents || []).length > 0 && (
+                            <span style={{ display: 'block', color: 'var(--success)', fontSize: '0.75rem', marginTop: '0.2rem' }}>
+                              ({fr.matched_saved_documents.length} match{fr.matched_saved_documents.length > 1 ? 'es' : ''})
+                            </span>
+                          )}
+                        </button>
+                        <button className="btn btn-sm btn-primary" onClick={() => setActiveModal({ type: 'upload', field: fr })}>
+                          <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}><Upload size={14} /> Upload New</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </div>
       </div>
     </div>

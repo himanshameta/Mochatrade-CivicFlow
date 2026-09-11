@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react'
 import axios from 'axios'
+import { FolderOpen, X, Folder, FileText, IdCard, Home, GraduationCap, FileBadge, Camera, ClipboardList, CircleDollarSign, Hospital } from 'lucide-react'
 
 const CATEGORY_ICONS = {
-  identity: '🆔', address_proof: '🏠', education: '🎓', certificate: '📜',
-  photo: '📷', resume: '📋', financial: '💰', medical: '🏥', other: '📄',
+  identity: <IdCard size={14} />, address_proof: <Home size={14} />, education: <GraduationCap size={14} />, certificate: <FileBadge size={14} />,
+  photo: <Camera size={14} />, resume: <ClipboardList size={14} />, financial: <CircleDollarSign size={14} />, medical: <Hospital size={14} />, other: <FileText size={14} />,
 }
 
 const DocumentPickerModal = ({ sessionId, fieldName, fieldLabel, accept, suggestedDocs, onClose, onSelected, showToast }) => {
@@ -66,8 +67,8 @@ const DocumentPickerModal = ({ sessionId, fieldName, fieldLabel, accept, suggest
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 600, maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
         <div className="modal-header">
-          <h3>📂 Choose from My Documents</h3>
-          <button className="modal-close" onClick={onClose}>×</button>
+          <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><FolderOpen size={20} /> Choose from My Documents</h3>
+          <button className="modal-close" onClick={onClose}><X size={16} /></button>
         </div>
         <p style={{ color: '#6b7280', fontSize: '0.9rem', margin: '0 0 0.75rem 0' }}>
           For: <strong>{fieldLabel}</strong>
@@ -80,7 +81,7 @@ const DocumentPickerModal = ({ sessionId, fieldName, fieldLabel, accept, suggest
             <button key={cat} onClick={() => setActiveCategory(cat)}
               className={`btn btn-sm ${activeCategory === cat ? 'btn-primary' : 'btn-outline'}`}
               style={{ textTransform: 'capitalize', fontSize: '0.8rem', padding: '0.25rem 0.75rem' }}>
-              {cat === 'all' ? '📁 All' : `${CATEGORY_ICONS[cat] || '📄'} ${cat.replace(/_/g, ' ')}`}
+              {cat === 'all' ? <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}><Folder size={14} /> All</span> : <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', textTransform: 'capitalize' }}>{CATEGORY_ICONS[cat] || <FileText size={14} />} {cat.replace(/_/g, ' ')}</span>}
             </button>
           ))}
         </div>
@@ -106,8 +107,8 @@ const DocumentPickerModal = ({ sessionId, fieldName, fieldLabel, accept, suggest
                     background: isSuggested ? 'rgba(16,185,129,0.08)' : 'transparent',
                   }}>
                   <div>
-                    <div style={{ fontWeight: 600 }}>
-                      {CATEGORY_ICONS[doc.category] || '📄'} {doc.display_name}
+                    <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      {CATEGORY_ICONS[doc.category] || <FileText size={14} />} {doc.display_name}
                       {isSuggested && <span style={{ marginLeft: '0.5rem', fontSize: '0.7rem', color: '#10b981', background: '#d1fae5', padding: '0.15rem 0.4rem', borderRadius: '4px' }}>Suggested</span>}
                     </div>
                     <div style={{ fontSize: '0.8rem', color: '#6b7280' }}>

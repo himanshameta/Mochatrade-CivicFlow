@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import axios from 'axios'
+import { X, MessageCircle, Bot } from 'lucide-react'
 
 const ChatBot = ({ user, showToast }) => {
   const [isOpen, setIsOpen] = useState(false)
@@ -83,13 +84,13 @@ const ChatBot = ({ user, showToast }) => {
         onClick={() => setIsOpen(!isOpen)}
         title="Chat with Sahayak"
       >
-        {isOpen ? '✕' : '💬'}
+        {isOpen ? <X size={24} /> : <MessageCircle size={24} />}
       </button>
 
       {isOpen && (
         <div className="chat-bot-window glass-card">
           <div className="chat-bot-header">
-            <div className="chat-bot-avatar">🤖</div>
+            <div className="chat-bot-avatar"><Bot size={20} /></div>
             <div>
               <h4>Sahayak AI</h4>
               <p>Your form filling assistant</p>

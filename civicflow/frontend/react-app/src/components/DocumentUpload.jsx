@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import axios from 'axios'
+import { FileText } from 'lucide-react'
 
 const CATEGORIES = [
   { value: 'identity', label: 'Identity (Aadhaar, PAN, Passport, etc.)' },
@@ -126,7 +127,7 @@ const DocumentUpload = ({ user, showToast }) => {
             <div className="form-group">
               <label>Select File *</label>
               <input type="file" onChange={handleFileChange} accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" />
-              {file && <div className="file-info">📄 {file.name} ({(file.size / 1024).toFixed(1)} KB)</div>}
+              {file && <div className="file-info" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><FileText size={16} /> {file.name} ({(file.size / 1024).toFixed(1)} KB)</div>}
             </div>
 
             <div className="form-actions">

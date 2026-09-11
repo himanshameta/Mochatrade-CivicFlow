@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import axios from 'axios'
+import { Bot, ArrowLeft } from 'lucide-react'
 
 const ExecutionView = ({ showToast }) => {
   const { sessionId } = useParams()
@@ -116,7 +117,7 @@ const ExecutionView = ({ showToast }) => {
         {/* ── CAPTCHA intervention ── */}
         {status === 'paused_captcha' && (
           <div className="intervention-panel">
-            <div className="intervention-icon">🤖</div>
+            <div className="intervention-icon"><Bot size={18} /></div>
             <h3>CAPTCHA Detected</h3>
             <p>Please solve the CAPTCHA in the automated browser window, then click continue.</p>
 
@@ -183,7 +184,7 @@ const ExecutionView = ({ showToast }) => {
         {status === 'failed' && (
           <div style={{ marginTop: '2rem', textAlign: 'center' }}>
             <button onClick={() => navigate('/dashboard')} className="btn btn-outline">
-              ← Go to Dashboard
+              <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><ArrowLeft size={16} /> Go to Dashboard</span>
             </button>
           </div>
         )}

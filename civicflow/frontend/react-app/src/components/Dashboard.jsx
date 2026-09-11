@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import axios from 'axios'
+import { FileText } from 'lucide-react'
 
 const Dashboard = ({ user, showToast }) => {
   const [sessions, setSessions] = useState([])
@@ -74,7 +75,7 @@ const Dashboard = ({ user, showToast }) => {
             onKeyDown={e => e.key === 'Enter' && navigate('/documents')}
             aria-label="Manage your documents"
           >
-            <div className="quick-icon">📄</div>
+            <div className="quick-icon"><FileText size={24} /></div>
             <div>
               <div className="quick-title">My Documents</div>
               <div className="quick-desc">Manage your secure document vault</div>

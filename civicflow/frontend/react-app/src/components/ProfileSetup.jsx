@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import axios from 'axios'
+import { ArrowRight, Lock } from 'lucide-react'
 
 const ProfileSetup = ({ user, showToast }) => {
   const [profile, setProfile] = useState({})
@@ -128,11 +129,11 @@ const ProfileSetup = ({ user, showToast }) => {
               </p>
               <div className="form-grid">
                 <div className="form-group">
-                  <label htmlFor="aadhaar">Aadhaar Number <span className="field-sensitive-tag">🔒 Encrypted</span></label>
+                  <label htmlFor="aadhaar">Aadhaar Number <span className="field-sensitive-tag"><Lock size={12} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '2px' }} /> Encrypted</span></label>
                   <input type="password" id="aadhaar" defaultValue={profile.aadhaar || ''} placeholder="XXXX XXXX XXXX" />
                 </div>
                 <div className="form-group">
-                  <label htmlFor="pan">PAN Number <span className="field-sensitive-tag">🔒 Encrypted</span></label>
+                  <label htmlFor="pan">PAN Number <span className="field-sensitive-tag"><Lock size={12} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '2px' }} /> Encrypted</span></label>
                   <input type="password" id="pan" defaultValue={profile.pan || ''} placeholder="ABCDE1234F" />
                 </div>
               </div>
@@ -143,7 +144,7 @@ const ProfileSetup = ({ user, showToast }) => {
                 Skip for now
               </button>
               <button type="submit" className="btn btn-primary" disabled={saving}>
-                {saving ? 'Saving...' : 'Save Profile →'}
+                {saving ? 'Saving...' : <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>Save Profile <ArrowRight size={16} /></span>}
               </button>
             </div>
           </form>

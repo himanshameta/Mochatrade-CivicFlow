@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import axios from 'axios'
+import { ArrowRight, Bot, Pencil, Lock } from 'lucide-react'
 
 const StartSession = ({ onSessionCreated }) => {
   const [url, setUrl] = useState('')
@@ -55,24 +56,24 @@ const StartSession = ({ onSessionCreated }) => {
             className="btn btn-primary" 
             disabled={loading || !url}
           >
-            {loading ? 'Processing...' : 'Start Autofill →'}
+            {loading ? 'Processing...' : <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>Start Autofill <ArrowRight size={16} /></span>}
           </button>
         </form>
       </div>
 
       <div className="features">
         <div className="feature">
-          <span className="feature-icon">🤖</span>
+          <span className="feature-icon"><Bot size={24} /></span>
           <h3>AI-Powered Mapping</h3>
           <p>Automatically matches your profile data to form fields</p>
         </div>
         <div className="feature">
-          <span className="feature-icon">✏️</span>
+          <span className="feature-icon"><Pencil size={24} /></span>
           <h3>Review Before Submit</h3>
           <p>Always review and edit values before autofill runs</p>
         </div>
         <div className="feature">
-          <span className="feature-icon">🔒</span>
+          <span className="feature-icon"><Lock size={24} /></span>
           <h3>Secure & Private</h3>
           <p>Your data is encrypted and never stored without permission</p>
         </div>
