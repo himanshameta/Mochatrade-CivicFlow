@@ -87,13 +87,15 @@ Otherwise, do not include the JSON block.
         
         # 1. Load history
         history = []
-        if db is not None:
-            session = await db.form_sessions.find_one({"session_id": session_id})
-            if session:
-                history = session.get("conversation_history", [])
-
-        # 2. Get profile completion
-        completion = await self._calculate_profile_completion(user_id)
+        completion = 0
+        try:
+            if db is not None:
+                session = await db.form_sessions.find_one({"session_id": session_id})
+                if session:
+                    history = session.get("conversation_history", [])
+                completion = await self._calculate_profile_completion(user_id)
+        except Exception as e:
+            print(f"[Counsellor] Database error, using fallback defaults: {e}")
         
         # 3. Pattern matching for responses
         message_lower = message.lower().strip()

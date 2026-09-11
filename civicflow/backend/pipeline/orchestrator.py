@@ -60,7 +60,7 @@ async def node_scout(state: PipelineState) -> PipelineState:
     
     if result.get("error"):
         error_msg = result['error']
-        print(f"[Pipeline] ✗ Scout failed: {error_msg}")
+        print(f"[Pipeline] [FAIL] Scout failed: {error_msg}")
         
         # Provide more helpful error messages
         if "No form found" in error_msg:
@@ -76,7 +76,7 @@ async def node_scout(state: PipelineState) -> PipelineState:
         }
     
     html = result.get("html", "")
-    print(f"[Pipeline] ✓ Scout got HTML length: {len(html)}")
+    print(f"[Pipeline] [OK] Scout got HTML length: {len(html)}")
     
     return {
         **state,
@@ -95,7 +95,7 @@ async def node_scraper(state: PipelineState) -> PipelineState:
     html = state.get("html", "")
     
     if not html or len(html) < 100:
-        print("[Pipeline] ✗ Invalid HTML — stopping pipeline")
+        print("[Pipeline] [FAIL] Invalid HTML — stopping pipeline")
         return {
             **state,
             "scraped_form": None,
@@ -107,7 +107,7 @@ async def node_scraper(state: PipelineState) -> PipelineState:
     result = await scraper(html, state["url"])
     
     if result is None:
-        print("[Pipeline] ✗ Scraper returned None — stopping pipeline")
+        print("[Pipeline] [FAIL] Scraper returned None — stopping pipeline")
         return {
             **state,
             "scraped_form": None,
@@ -118,7 +118,7 @@ async def node_scraper(state: PipelineState) -> PipelineState:
     
     fields_count = len(result.get('fields', []))
     if fields_count == 0:
-        print("[Pipeline] ✗ No fields found — stopping pipeline")
+        print("[Pipeline] [FAIL] No fields found — stopping pipeline")
         return {
             **state,
             "scraped_form": None,
@@ -127,7 +127,7 @@ async def node_scraper(state: PipelineState) -> PipelineState:
             "retry_count": 999
         }
     
-    print(f"[Pipeline] ✓ Scraper found {fields_count} fields")
+    print(f"[Pipeline] [OK] Scraper found {fields_count} fields")
     
     session = await session_store.load(state["session_id"])
     if session:
@@ -180,9 +180,9 @@ async def node_analyst(state: PipelineState) -> PipelineState:
         state["status"] = "ready"
         
         if missing:
-            print(f"[Pipeline] ⚠ {len(missing)} fields missing but continuing - user can fill them later")
+            print(f"[Pipeline] [WARNING] {len(missing)} fields missing but continuing - user can fill them later")
         else:
-            print(f"[Pipeline] ✓ All fields mapped from profile")
+            print(f"[Pipeline] [OK] All fields mapped from profile")
         
         # Save to session
         session = await session_store.load(state["session_id"])
@@ -196,12 +196,12 @@ async def node_analyst(state: PipelineState) -> PipelineState:
         
         filled = len(pre_filled)
         total = len(scraped_form.fields)
-        print(f"[Pipeline] ✓ Analyst complete - Mapped {filled}/{total} fields from user profile")
+        print(f"[Pipeline] [OK] Analyst complete - Mapped {filled}/{total} fields from user profile")
         
     except Exception as e:
         state["error"] = f"Analysis failed: {str(e)}"
         state["status"] = "failed"
-        print(f"[Pipeline] ✗ Analyst failed: {e}")
+        print(f"[Pipeline] [FAIL] Analyst failed: {e}")
         import traceback
         traceback.print_exc()
     
@@ -314,9 +314,9 @@ async def node_check_completeness(state: PipelineState) -> PipelineState:
     state["status"] = "awaiting_confirmation"
     
     if blockers:
-        print(f"[Pipeline] ⚠ {len(blockers)} blockers found")
+        print(f"[Pipeline] [WARNING] {len(blockers)} blockers found")
     else:
-        print(f"[Pipeline] ✓ All required data available, awaiting user confirmation")
+        print(f"[Pipeline] [OK] All required data available, awaiting user confirmation")
     
     # Update session
     session = await session_store.load(state["session_id"])
@@ -343,13 +343,13 @@ async def node_scriptgen(state: PipelineState) -> PipelineState:
     
     # GUARD: If analyst failed (status is failed), stop immediately
     if state.get("status") == "failed":
-        print("[Pipeline] ✗ ScriptGen skipped — pipeline already failed")
+        print("[Pipeline] [FAIL] ScriptGen skipped — pipeline already failed")
         return {**state, "retry_count": 999}  # Prevent retry loop
     
     # HARD GUARD: stop immediately if scraped_form is None
     raw = state.get("scraped_form")
     if raw is None:
-        print("[Pipeline] ✗ ScriptGen ABORTED: scraped_form is None — scraping failed earlier")
+        print("[Pipeline] [FAIL] ScriptGen ABORTED: scraped_form is None — scraping failed earlier")
         return {
             **state,
             "status": "failed",
@@ -366,7 +366,7 @@ async def node_scriptgen(state: PipelineState) -> PipelineState:
         else:
             raise ValueError(f"Unexpected type for scraped_form: {type(raw)}")
     except Exception as e:
-        print(f"[Pipeline] ✗ ScriptGen ABORTED: cannot parse scraped_form: {e}")
+        print(f"[Pipeline] [FAIL] ScriptGen ABORTED: cannot parse scraped_form: {e}")
         return {
             **state,
             "status": "failed",
@@ -397,7 +397,7 @@ async def node_scriptgen(state: PipelineState) -> PipelineState:
         upload_dir = os.getenv("UPLOAD_DIR", "./uploads")
         script_path = Path(upload_dir) / "scripts" / f"{state['session_id']}.py"
         
-        print(f"[Pipeline] ✓ ScriptGen succeeded: {script_path}")
+        print(f"[Pipeline] [OK] ScriptGen succeeded: {script_path}")
         return {
             **state,
             "generated_script": script,
@@ -406,7 +406,7 @@ async def node_scriptgen(state: PipelineState) -> PipelineState:
             "retry_count": state.get("retry_count", 0)
         }
     except Exception as e:
-        print(f"[Pipeline] ✗ ScriptGen failed with exception: {e}")
+        print(f"[Pipeline] [FAIL] ScriptGen failed with exception: {e}")
         return {
             **state,
             "status": "failed",
@@ -422,7 +422,7 @@ async def node_executor(state: PipelineState) -> PipelineState:
     
     script_path = state.get("script_path")
     if not script_path:
-        print("[Pipeline] ✗ Executor skipped — no script_path in state")
+        print("[Pipeline] [FAIL] Executor skipped — no script_path in state")
         return {
             **state,
             "status": "failed",
@@ -446,33 +446,33 @@ async def node_executor(state: PipelineState) -> PipelineState:
                 "message": result["message"],
                 "screenshot_path": result.get("screenshot_path")
             }
-            print(f"[Pipeline] ⏸ Execution paused - CAPTCHA detected")
+            print(f"[Pipeline] [PAUSED] Execution paused - CAPTCHA detected")
             
         elif result["status"] == "paused_otp":
             state["pause_context"] = {
                 "type": "otp",
                 "message": result["message"]
             }
-            print(f"[Pipeline] ⏸ Execution paused - OTP required")
+            print(f"[Pipeline] [PAUSED] Execution paused - OTP required")
             
         elif result["status"] == "completed":
             state["pause_context"] = None
-            print(f"[Pipeline] ✓ Execution complete - form submitted!")
+            print(f"[Pipeline] [OK] Execution complete - form submitted!")
             
         elif result["status"] == "failed":
             state["error"] = result["message"]
-            print(f"[Pipeline] ✗ Execution failed: {result['message']}")
+            print(f"[Pipeline] [FAIL] Execution failed: {result['message']}")
             
             # PART 8: Retry logic fix
             if "Script error" in result["message"] or "SyntaxError" in result["message"]:
                 if state.get("retry_count", 0) < 2:
-                    print("[Pipeline] ↻ Executor failure was due to generated script, preparing for ScriptGen retry")
+                    print("[Pipeline] [RETRY] Executor failure was due to generated script, preparing for ScriptGen retry")
                     state["status"] = "retrying"
         
     except Exception as e:
         state["error"] = f"Execution exception: {str(e)}"
         state["status"] = "failed"
-        print(f"[Pipeline] ✗ Executor exception: {e}")
+        print(f"[Pipeline] [FAIL] Executor exception: {e}")
     
     return state
 
@@ -494,7 +494,7 @@ def route_after_executor(state: PipelineState) -> str:
             print(f"[Pipeline] Retrying script generation (attempt {retry_count + 1}/2)")
             return "scriptgen"
         else:
-            print("[Pipeline] ✗ Max retries reached. Stopping.")
+            print("[Pipeline] [FAIL] Max retries reached. Stopping.")
             return END  # CRITICAL: must return END not loop again
     
     return END  # Default: always END if unknown status
@@ -513,10 +513,10 @@ async def node_notifier(state: PipelineState) -> PipelineState:
             url=state["url"]
         )
         
-        print(f"[Pipeline] ✓ Notification sent")
+        print(f"[Pipeline] [OK] Notification sent")
         
     except Exception as e:
-        print(f"[Pipeline] ⚠ Notification failed: {e}")
+        print(f"[Pipeline] [WARNING] Notification failed: {e}")
         # Don't fail the pipeline for notification errors
     
     return state

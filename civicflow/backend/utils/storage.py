@@ -127,22 +127,22 @@ if __name__ == "__main__":
     
     print("\n[Test 1] Creating directories")
     docs_dir = get_session_docs_dir(test_session)
-    print(f"✓ Docs directory: {docs_dir}")
+    print(f"[OK] Docs directory: {docs_dir}")
     
     scripts_dir = get_session_scripts_dir()
-    print(f"✓ Scripts directory: {scripts_dir}")
+    print(f"[OK] Scripts directory: {scripts_dir}")
     
     screenshots_dir = get_screenshots_dir()
-    print(f"✓ Screenshots directory: {screenshots_dir}")
+    print(f"[OK] Screenshots directory: {screenshots_dir}")
     
     print("\n[Test 2] File validation")
-    print(f"✓ 'document.pdf' valid: {is_valid_file_type('document.pdf')}")
-    print(f"✓ 'image.png' valid: {is_valid_file_type('image.png')}")
-    print(f"✓ 'script.exe' valid: {is_valid_file_type('script.exe')}")
+    print(f"[OK] 'document.pdf' valid: {is_valid_file_type('document.pdf')}")
+    print(f"[OK] 'image.png' valid: {is_valid_file_type('image.png')}")
+    print(f"[OK] 'script.exe' valid: {is_valid_file_type('script.exe')}")
     
     print("\n[Test 3] Cleanup")
     cleanup_session_files(test_session)
-    print(f"✓ Cleaned up session files")
+    print(f"[OK] Cleaned up session files")
     
     print("\n" + "=" * 80)
     print("Storage utility tests complete!")

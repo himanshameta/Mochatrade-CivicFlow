@@ -88,9 +88,9 @@ async def scout(url: str) -> dict:
     )
     
     if result.get("error"):
-        print(f"[Scout] ✗ Error: {result['error']}")
+        print(f"[Scout] [FAIL] Error: {result['error']}")
     else:
-        print(f"[Scout] ✓ Page loaded: {result['title']} | HTML length: {len(result['html'])}")
+        print(f"[Scout] [OK] Page loaded: {result['title']} | HTML length: {len(result['html'])}")
     
     return result
 

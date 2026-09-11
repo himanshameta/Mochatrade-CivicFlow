@@ -23,6 +23,11 @@ const DocumentUpload = ({ user, showToast }) => {
   const [tags, setTags] = useState('')
   const [uploading, setUploading] = useState(false)
 
+  // OCR Confirm Modal states
+  const [showConfirmModal, setShowConfirmModal] = useState(false)
+  const [detectedFields, setDetectedFields] = useState({})
+  const [docId, setDocId] = useState('')
+
   const handleFileChange = (e) => {
     const selectedFile = e.target.files[0]
     if (selectedFile) {
@@ -50,15 +55,38 @@ const DocumentUpload = ({ user, showToast }) => {
     if (tags.trim()) formData.append('tags', tags.trim())
 
     try {
-      await axios.post('/documents/vault/upload', formData, {
+      const res = await axios.post('/documents/vault/upload', formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       })
-      showToast('Document uploaded to vault!', 'success')
-      navigate('/documents')
+      
+      const resData = res.data.data
+      const extracted = resData.extracted_fields || {}
+      
+      if (Object.keys(extracted).length > 0) {
+        setDetectedFields(extracted)
+        setDocId(resData.document.document_id)
+        setShowConfirmModal(true)
+      } else {
+        showToast('Document uploaded to vault!', 'success')
+        navigate('/documents')
+      }
     } catch (error) {
       showToast(error.response?.data?.detail || 'Failed to upload document', 'error')
     } finally {
       setUploading(false)
+    }
+  }
+
+  const handleConfirmSave = async () => {
+    try {
+      await axios.post(`/documents/confirm/${docId}`, {
+        corrected_fields: detectedFields
+      })
+      showToast('Document confirmed and saved to profile!', 'success')
+      setShowConfirmModal(false)
+      navigate('/documents')
+    } catch (error) {
+      showToast(error.response?.data?.detail || 'Failed to save fields', 'error')
     }
   }
 
@@ -104,12 +132,48 @@ const DocumentUpload = ({ user, showToast }) => {
             <div className="form-actions">
               <button className="btn btn-outline" onClick={() => navigate('/documents')}>Cancel</button>
               <button className="btn btn-primary" onClick={handleUpload} disabled={uploading || !file || !displayName.trim() || !category}>
-                {uploading ? 'Uploading...' : 'Upload to Vault'}
+                {uploading ? 'Processing OCR & Uploading...' : 'Upload to Vault'}
               </button>
             </div>
           </div>
         </div>
       </div>
+
+      {showConfirmModal && (
+        <div className="modal-overlay" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div className="modal-content" style={{ maxWidth: 500, width: '90%', padding: '2rem', borderRadius: '12px', background: 'var(--glass-bg)', backdropFilter: 'blur(20px)', border: '1px solid var(--glass-border)' }}>
+            <div className="modal-header" style={{ borderBottom: '1px solid var(--glass-border)', paddingBottom: '1rem', marginBottom: '1.5rem' }}>
+              <h3 style={{ margin: 0, color: 'var(--sage-300)' }}>📋 OCR Extracted Data</h3>
+            </div>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '1.5rem' }}>
+              The AI extracted the following fields from your document. Please verify them before saving to your profile:
+            </p>
+            <div className="modal-body" style={{ maxHeight: '300px', overflowY: 'auto', marginBottom: '1.5rem' }}>
+              {Object.entries(detectedFields).map(([key, val]) => (
+                <div className="form-group" key={key} style={{ marginBottom: '1rem' }}>
+                  <label style={{ fontSize: '0.8rem', textTransform: 'uppercase', color: 'var(--text-muted)', display: 'block', marginBottom: '0.25rem' }}>
+                    {key.replace(/_/g, ' ')}
+                  </label>
+                  <input
+                    type="text"
+                    value={val || ''}
+                    onChange={(e) => setDetectedFields(prev => ({ ...prev, [key]: e.target.value }))}
+                    style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--glass-border)', background: 'rgba(255,255,255,0.05)', color: 'var(--text-primary)' }}
+                  />
+                </div>
+              ))}
+            </div>
+            <div className="form-actions" style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
+              <button className="btn btn-outline" onClick={() => { setShowConfirmModal(false); navigate('/documents'); }}>
+                Discard/Skip
+              </button>
+              <button className="btn btn-primary" onClick={handleConfirmSave}>
+                Save to Profile
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

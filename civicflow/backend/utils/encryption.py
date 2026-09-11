@@ -25,7 +25,7 @@ try:
 except ImportError:
     CRYPTO_AVAILABLE = False
     print(
-        "[Encryption] ⚠ cryptography package not installed — "
+        "[Encryption] [WARNING] cryptography package not installed — "
         "field encryption disabled. Run: pip install cryptography"
     )
 
@@ -154,7 +154,7 @@ def decrypt_field(encrypted: str, user_id: str) -> str:
         return plaintext.decode("utf-8")
 
     except Exception as e:
-        print(f"[Encryption] ⚠ Decryption failed for user {user_id[:8]}: {e}")
+        print(f"[Encryption] [WARNING] Decryption failed for user {user_id[:8]}: {e}")
         return ""
 
 

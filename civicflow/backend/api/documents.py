@@ -8,7 +8,7 @@ import sys
 from typing import List, Optional
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form, Path as FastApiPath
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form, Path as FastApiPath, BackgroundTasks
 from pydantic import BaseModel
 import shutil
 import uuid
@@ -135,6 +135,13 @@ async def confirm_document(
 
     # Fetch document metadata
     doc_meta = await db.documents.find_one({"doc_id": doc_id, "user_id": user_id})
+    if not doc_meta:
+        # Fallback to user_documents collection (for vault uploads)
+        doc_meta = await db.user_documents.find_one({"document_id": doc_id, "user_id": user_id})
+        if doc_meta:
+            doc_meta["doc_id"] = doc_meta["document_id"]
+            doc_meta["doc_type"] = doc_meta.get("category", "unknown")
+            
     if not doc_meta:
         raise HTTPException(status_code=404, detail="Document not found")
 
@@ -366,6 +373,71 @@ from db.vault_db import (
 )
 
 
+async def trigger_ocr_and_profile_save(
+    doc_id: str,
+    user_id: str,
+    original_filename: str,
+    storage_path: str,
+    category: str,
+    file_bytes: bytes,
+    mime_type: str
+):
+    """Runs OCR & LLM extraction on a newly uploaded vault document and stores the encrypted results in the user profile."""
+    try:
+        agent = get_doc_vault()
+        if agent is None:
+            print("[OCR Vault] DocVaultAgent not initialized, skipping OCR")
+            return
+        
+        ocr_healthy = await agent.check_ocr_health()
+        if not ocr_healthy:
+            print("[OCR Vault] OCR service is not healthy, skipping OCR")
+            return
+            
+        print(f"[OCR Vault] Running OCR for vault document: {doc_id} (category: {category})")
+        result = await agent.process_document(
+            file_bytes=file_bytes,
+            filename=original_filename,
+            mime_type_hint=mime_type,
+            doc_type=category,
+            user_id=user_id,
+            session_id=""
+        )
+        
+        fields_to_save = result.extracted_fields
+        if not fields_to_save:
+            print("[OCR Vault] No fields extracted from document")
+            return
+            
+        from utils.encryption import encrypt_dict_fields
+        encrypted_fields = encrypt_dict_fields(fields_to_save, user_id, list(fields_to_save.keys()))
+        
+        from models.user_models import UploadedDocumentRef
+        doc_ref = UploadedDocumentRef(
+            doc_id=doc_id,
+            doc_type=category,
+            original_filename=original_filename,
+            storage_path=storage_path,
+            ocr_extracted_fields=encrypted_fields,
+            is_verified=True
+        )
+        
+        db = await get_db()
+        if db is not None:
+            # Check if profile exists, if not create it
+            profile_res = await db.user_profiles.update_one(
+                {"user_id": user_id},
+                {"$push": {"uploaded_documents": doc_ref.model_dump()}}
+            )
+            if profile_res.matched_count == 0:
+                from models.user_models import UserProfileData
+                new_profile = UserProfileData(user_id=user_id, uploaded_documents=[doc_ref])
+                await db.user_profiles.insert_one(new_profile.model_dump())
+            print(f"[OCR Vault] OCR succeeded and fields saved for vault document: {doc_id}")
+    except Exception as e:
+        print(f"[OCR Vault] Failed to run OCR/extraction: {e}")
+
+
 @router.post("/vault/upload", summary="Upload a document to the vault")
 async def vault_upload(
     file: UploadFile = File(...),
@@ -406,7 +478,54 @@ async def vault_upload(
     )
 
     await vault_create(doc)
-    return ok("Document uploaded", data=UserDocumentPublic.from_document(doc).model_dump())
+    
+    # Run OCR and extract data synchronously so we can return it to the frontend dialog
+    extracted_fields = {}
+    try:
+        agent = get_doc_vault()
+        if agent is not None and await agent.check_ocr_health():
+            print(f"[OCR Vault] Running synchronous OCR for: {doc.document_id}")
+            result = await agent.process_document(
+                file_bytes=file_bytes,
+                filename=file.filename,
+                mime_type_hint=mime_type,
+                doc_type=category,
+                user_id=user_id,
+                session_id=""
+            )
+            extracted_fields = result.extracted_fields
+            
+            # Save a pending reference in profile
+            from utils.encryption import encrypt_dict_fields
+            encrypted_fields = encrypt_dict_fields(extracted_fields, user_id, list(extracted_fields.keys()))
+            
+            from models.user_models import UploadedDocumentRef
+            doc_ref = UploadedDocumentRef(
+                doc_id=doc.document_id,
+                doc_type=category,
+                original_filename=file.filename or "unknown",
+                storage_path=storage_path,
+                ocr_extracted_fields=encrypted_fields,
+                is_verified=False
+            )
+            
+            db = await get_db()
+            if db is not None:
+                profile_res = await db.user_profiles.update_one(
+                    {"user_id": user_id},
+                    {"$push": {"uploaded_documents": doc_ref.model_dump()}}
+                )
+                if profile_res.matched_count == 0:
+                    from models.user_models import UserProfileData
+                    new_profile = UserProfileData(user_id=user_id, uploaded_documents=[doc_ref])
+                    await db.user_profiles.insert_one(new_profile.model_dump())
+    except Exception as e:
+        print(f"[OCR Vault] Synchronous OCR failed: {e}")
+
+    return ok("Document uploaded", data={
+        "document": UserDocumentPublic.from_document(doc).model_dump(),
+        "extracted_fields": extracted_fields
+    })
 
 
 @router.get("/vault/list", summary="List vault documents")
@@ -494,6 +613,7 @@ async def session_attach_document(
 @router.post("/session/{session_id}/upload-document", summary="Upload a file for a session file field")
 async def session_upload_document(
     session_id: str,
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     field_name: str = Form(...),
     display_name: str = Form(...),
@@ -536,6 +656,18 @@ async def session_upload_document(
         )
         await vault_create(doc)
         doc_id = doc.document_id
+        
+        # Run OCR in background
+        background_tasks.add_task(
+            trigger_ocr_and_profile_save,
+            doc.document_id,
+            user_id,
+            file.filename,
+            storage_path,
+            category,
+            file_bytes,
+            mime_type
+        )
     else:
         # Save to temp session dir only
         stored_filename, storage_path = save_temp_session_file(

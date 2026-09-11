@@ -45,7 +45,23 @@ class FormSearchAgent:
         from utils.llm import get_llm_client
         self.llm = get_llm_client()
         if not self.llm.api_key:
-            print("[FormSearch] ⚠ OpenRouter API key not configured")
+            print("[FormSearch] [WARNING] OpenRouter API key not configured")
+
+    def is_valid_url(self, url: str) -> bool:
+        """Sanity check to reject obvious placeholder/example URLs from LLM."""
+        url_lower = url.lower()
+        placeholders = [
+            "your-username", "your-repo", "example.com", "placeholder", 
+            "yourdomain", "yoursite", "template", "github.com/your-", 
+            "github.com/username", "github.com/my-", "github.com/repo",
+            "localhost", "127.0.0.1", "github.com/yourusername"
+        ]
+        for p in placeholders:
+            if p in url_lower:
+                return False
+        if "." not in url:
+            return False
+        return True
 
     async def find_form_url(
         self,
@@ -129,6 +145,11 @@ class FormSearchAgent:
                 if not url.startswith("http"):
                     url = "https://" + url
                     
+                # Sanity check to filter bad/hallucinated URLs
+                if not self.is_valid_url(url):
+                    print(f"[FormSearch] Filtered out hallucinated/invalid URL: {url}")
+                    continue
+
                 # For government portal search, prefer .gov.in domains but accept all valid URLs
                 options.append(FormSearchOption(
                     url=url,
@@ -140,10 +161,9 @@ class FormSearchAgent:
             if not options:
                 return FormSearchResult(options=[], valid=False, error_message="No matching form URL found for this service.")
 
-            # Optionally, verify the top option
+            # Verify the top option if it's valid
             top_option = options[0]
-            if await self.verify_url_accessible(top_option.url):
-                pass # It's good
+            await self.verify_url_accessible(top_option.url)
                 
             return FormSearchResult(options=options, valid=True)
 
@@ -181,16 +201,19 @@ class FormSearchAgent:
         if not url.startswith("http"):
             url = "https://" + url
             
+        if not self.is_valid_url(url):
+            return False
+
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         }
             
         try:
-            async with httpx.AsyncClient(verify=False, timeout=5.0) as client:
+            async with httpx.AsyncClient(verify=False, timeout=3.0) as client:
                 response = await client.head(url, headers=headers, follow_redirects=True)
                 if response.status_code >= 400 and response.status_code != 405:
                     # Sometimes HEAD is blocked, try a quick GET
                     response = await client.get(url, headers=headers, follow_redirects=True)
                 return response.status_code < 400
-        except httpx.RequestError:
+        except Exception:
             return False

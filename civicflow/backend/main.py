@@ -33,20 +33,20 @@ from config import settings
 logger.info("="*60)
 logger.info("CivicFlow Configuration")
 logger.info("Python executable: %s", sys.executable)
-logger.info("OpenRouter API Key: %s", "✓ configured" if settings.openrouter_api_key else "✗ missing")
+logger.info("OpenRouter API Key: %s", "[OK] configured" if settings.openrouter_api_key else "[FAIL] missing")
 
 # Test PaddleOCR import
 try:
     import paddle
-    logger.info("paddle import: ✓ OK")
+    logger.info("paddle import: [OK]")
 except Exception as e:
-    logger.error("paddle import: ✗ FAILED — %s", str(e))
+    logger.error("paddle import: [FAIL] — %s", str(e))
 
 try:
     import paddleocr
-    logger.info("paddleocr import: ✓ OK")
+    logger.info("paddleocr import: [OK]")
 except Exception as e:
-    logger.error("paddleocr import: ✗ FAILED — %s: %s", type(e).__name__, str(e))
+    logger.error("paddleocr import: [FAIL] — %s: %s", type(e).__name__, str(e))
 
 logger.info("="*60)
 
@@ -142,6 +142,7 @@ if Path(upload_dir).exists():
     app.mount("/uploads", StaticFiles(directory=upload_dir), name="uploads")
 
 # ── Routers ────────────────────────────────────────────────────────────────
+app.include_router(confirm_router)     # Mounted first to override duplicate endpoints cleanly
 app.include_router(api_router, tags=["Sessions"])
 app.include_router(auth_router)         # /auth
 app.include_router(documents_router)   # /documents

@@ -33,7 +33,7 @@ try:
 except ImportError:
     PASSLIB_AVAILABLE = False
     _pwd_context = None
-    print("[AuthUtils] ⚠ passlib not installed — using insecure dev fallback")
+    print("[AuthUtils] [WARNING] passlib not installed — using insecure dev fallback")
 
 try:
     from jose import JWTError, jwt as _jose_jwt
@@ -41,7 +41,7 @@ try:
 except ImportError:
     JOSE_AVAILABLE = False
     _jose_jwt = None
-    print("[AuthUtils] ⚠ python-jose not installed — using dev token fallback")
+    print("[AuthUtils] [WARNING] python-jose not installed — using dev token fallback")
 
 # ---------------------------------------------------------------------------
 # JWT Configuration (from env / config.py)
