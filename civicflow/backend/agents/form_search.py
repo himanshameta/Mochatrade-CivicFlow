@@ -1,8 +1,8 @@
 """
-CivicFlow — Form Search Agent
-=============================
-Uses Gemini to find the correct government portal URL for any service,
-falling back to the user's provided URL if given.
+CivicFlow — Universal Form Search Agent
+========================================
+Finds form URLs for ANY service or website.
+Includes a curated list of government portals but works with ANY URL.
 """
 import os
 import sys
@@ -10,26 +10,25 @@ import json
 import httpx
 from typing import Optional, List
 
-from google import genai
-
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from models.form_models import FormSearchResult, FormSearchOption
+from config import settings
 
 
 class FormSearchAgent:
     """
-    Uses Gemini to find the correct government portal URL for any service.
-    Falls back to user-provided URL if needed.
+    Universal form finder - works with ANY website.
+    Includes government portal knowledge base but accepts all URLs.
     """
 
-    GOVERNMENT_PORTALS_KNOWLEDGE = """
-    Known Indian government portals (use as starting context):
+    PORTALS_KNOWLEDGE = """
+    Known Indian government portals (reference - but system works with ANY website):
     - Passport: passportindia.gov.in
     - PAN: incometaxindia.gov.in or onlineservices.nsdl.com
     - Aadhaar update: uidai.gov.in
     - GST: gst.gov.in
-    - Income tax: incometaxindiaefiling.gov.in
+    - Income tax: https://www.incometax.gov.in/iec/foportal/
     - EPF: epfindia.gov.in
     - Driving licence: sarathi.parivahan.gov.in
     - Vehicle RC: vahan.parivahan.gov.in
@@ -37,10 +36,16 @@ class FormSearchAgent:
     - MSME/Udyam: udyamregistration.gov.in
     - FSSAI: foscos.fssai.gov.in
     - Birth cert: varies by state municipal corporation
+    
+    Note: CivicFlow works with ANY website - not limited to government sites.
+    This list is just a reference for common services.
     """
 
     def __init__(self):
-        self.client = genai.Client()
+        from utils.llm import get_llm_client
+        self.llm = get_llm_client()
+        if not self.llm.api_key:
+            print("[FormSearch] ⚠ OpenRouter API key not configured")
 
     async def find_form_url(
         self,
@@ -50,31 +55,38 @@ class FormSearchAgent:
     ) -> FormSearchResult:
         """
         If user_provided_url is given: validate and return it directly.
-        Otherwise: use Gemini to identify the correct portal.
+        Otherwise: use LLM to identify the correct portal.
+        Accepts ANY URL - not limited to government sites.
         """
-        # 1. User Override
+        # 1. User Override - accept ANY URL
         if user_provided_url:
-            is_gov = self._is_government_domain(user_provided_url)
             accessible = await self.verify_url_accessible(user_provided_url)
             
             return FormSearchResult(
                 options=[FormSearchOption(
                     url=user_provided_url,
-                    portal_name="User Provided Portal",
+                    portal_name="User Provided URL",
                     confidence=1.0,
-                    notes="Verified accessibility" if accessible else "Warning: URL may be unreachable"
+                    notes="Accessible" if accessible else "Warning: URL may be unreachable"
                 )],
                 is_user_provided=True,
-                valid=accessible
+                valid=True  # Always valid if user provided it
             )
 
-        # 2. Gemini Search
+        # 2. OpenRouter LLM Search
+        if not self.llm.api_key:
+            return FormSearchResult(
+                options=[],
+                valid=False,
+                error_message="OpenRouter API key not configured"
+            )
+        
         state_context = f" in the state of {state}" if state else ""
         
         prompt = f"""
-        {self.GOVERNMENT_PORTALS_KNOWLEDGE}
+        {self.PORTALS_KNOWLEDGE}
         
-        For {service_name} in India{state_context}, what is the official government portal URL?
+        For {service_name} in India{state_context}, what is the best URL?
         
         Return ONLY valid JSON in this exact format: 
         [
@@ -82,17 +94,21 @@ class FormSearchAgent:
         ]
         
         Rules:
-        - Only include .gov.in, .nic.in, or recognized official domains.
-        - Return up to 3 options.
-        - Order by confidence (highest first).
-        - No markdown wrapping, just raw JSON array.
+        - Can suggest ANY website URL that matches the service
+        - Return up to 3 options
+        - Order by confidence (highest first)
+        - No markdown wrapping, just raw JSON array
         """
 
         try:
-            response = self.client.models.generate_content(model="gemini-2.0-flash-lite", contents=prompt)
-            text = response.text.strip()
+            # Call OpenRouter via unified LLM client
+            text = await self.llm.generate_content(
+                prompt=prompt,
+                temperature=0.1,
+                max_tokens=500
+            )
             
-            # Clean up markdown if Gemini ignores instructions
+            # Clean up markdown if LLM ignores instructions
             if text.startswith("```json"):
                 text = text[7:]
             if text.startswith("```"):
@@ -113,17 +129,16 @@ class FormSearchAgent:
                 if not url.startswith("http"):
                     url = "https://" + url
                     
-                # Filter out obvious hallucinations or non-gov sites
-                if self._is_government_domain(url):
-                    options.append(FormSearchOption(
-                        url=url,
-                        portal_name=item.get("portal_name", "Unknown Portal"),
-                        confidence=float(item.get("confidence", 0.0)),
-                        notes=item.get("notes", "")
-                    ))
+                # For government portal search, prefer .gov.in domains but accept all valid URLs
+                options.append(FormSearchOption(
+                    url=url,
+                    portal_name=item.get("portal_name", "Unknown Portal"),
+                    confidence=float(item.get("confidence", 0.0)),
+                    notes=item.get("notes", "")
+                ))
 
             if not options:
-                return FormSearchResult(options=[], valid=False, error_message="No official government portal found for this service.")
+                return FormSearchResult(options=[], valid=False, error_message="No matching form URL found for this service.")
 
             # Optionally, verify the top option
             top_option = options[0]

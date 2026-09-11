@@ -18,9 +18,18 @@ except ImportError:
 
 
 class Settings(BaseSettings):
-    # --- Gemini AI ---
-    gemini_api_key: str = ""
-    gemini_model: str = "gemini-2.0-flash-lite"  # Default model
+    # --- OpenRouter API ---
+    openrouter_api_key: str = ""
+    openrouter_site_url: str = "https://civicflow.app"
+    openrouter_site_name: str = "CivicFlow"
+    openrouter_model: str = "nvidia/nemotron-3-ultra-550b-a55b:free"
+    
+    # --- LLM Extraction ---
+    llm_extraction_model: str = "nvidia/nemotron-3-ultra-550b-a55b:free"
+
+    # --- OCR Service ---
+    ocr_api_url: str = "http://localhost:8081"
+    ocr_api_enabled: bool = True
 
     # --- Redis (executor signaling: captcha / otp resume) ---
     redis_url: str = "redis://localhost:6379"

@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>CivicFlow — Automated Government Forms</title>
-  <meta name="description" content="AI-powered government form filling for Indian citizens. Upload documents, let Sahayak guide you through every step.">
+  <title>CivicFlow — Automated Form Filling</title>
+  <meta name="description" content="AI-powered form filling assistant. Upload documents, auto-fill any web form with your data.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -76,12 +76,12 @@
           </svg>
           <h1>CivicFlow</h1>
         </div>
-        <p class="brand-tagline">AI-powered government form filling for every citizen</p>
+        <p class="brand-tagline">AI-powered form filling for any website</p>
         <div class="brand-features">
           <div class="brand-feature"><span>🤖</span> Sahayak guides you step by step</div>
-          <div class="brand-feature"><span>📄</span> Auto-extract from Aadhaar, PAN & more</div>
+          <div class="brand-feature"><span>📄</span> Auto-extract from your documents</div>
           <div class="brand-feature"><span>🔒</span> AES-256 encrypted, zero-trust storage</div>
-          <div class="brand-feature"><span>🌐</span> Works with any government portal</div>
+          <div class="brand-feature"><span>🌐</span> Works with any form on any website</div>
         </div>
       </div>
       <div class="auth-form-card glass-card">
@@ -349,13 +349,13 @@
   <div class="view" id="view-form-search">
     <div class="page-container">
       <div class="page-hero">
-        <h2>Find a Government Form</h2>
-        <p>Describe what you need or paste a direct URL</p>
+        <h2>Find a Form to Autofill</h2>
+        <p>Paste a direct form URL or describe what you need</p>
       </div>
 
       <!-- Toggle -->
       <div class="search-mode-toggle glass-card">
-        <button class="mode-btn active" id="modeDescribe" onclick="App.setSearchMode('describe')">Describe Service</button>
+        <button class="mode-btn active" id="modeDescribe" onclick="App.setSearchMode('describe')">Describe Need</button>
         <button class="mode-btn" id="modePasteUrl" onclick="App.setSearchMode('url')">Paste URL</button>
       </div>
 
@@ -363,27 +363,27 @@
       <div id="searchDescribePanel" class="glass-card search-panel">
         <div class="form-group">
           <label for="serviceSearch">What do you need help with?</label>
-          <input type="text" id="serviceSearch" placeholder="e.g. Apply for Passport, Renew Driving Licence, PAN Card...">
+          <input type="text" id="serviceSearch" placeholder="e.g. Apply for Passport, Job Application, Registration Form...">
         </div>
         <div class="form-group">
-          <label for="stateSearch">State (optional)</label>
-          <input type="text" id="stateSearch" placeholder="e.g. Maharashtra, Tamil Nadu">
+          <label for="stateSearch">Additional Context (optional)</label>
+          <input type="text" id="stateSearch" placeholder="e.g. Company name, organization, location">
         </div>
         <button class="btn btn-primary" onclick="App.searchForm()">
-          <span class="btn-text">Search Portals</span>
+          <span class="btn-text">Search Forms</span>
         </button>
       </div>
 
       <!-- URL Mode -->
       <div id="searchUrlPanel" class="glass-card search-panel hidden">
         <div class="form-group">
-          <label for="directUrl">Portal URL</label>
-          <input type="url" id="directUrl" placeholder="https://passportindia.gov.in/...">
+          <label for="directUrl">Form URL</label>
+          <input type="url" id="directUrl" placeholder="https://example.com/form or https://passportindia.gov.in/...">
         </div>
         <div class="verify-row" id="urlVerifyRow" style="display:none">
           <div class="verify-badge" id="urlVerifyBadge"></div>
         </div>
-        <button class="btn btn-primary" onclick="App.useDirectUrl()">Verify &amp; Use This URL →</button>
+        <button class="btn btn-primary" onclick="App.useDirectUrl()">Verify & Continue →</button>
       </div>
 
       <!-- Results -->

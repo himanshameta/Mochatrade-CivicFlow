@@ -25,14 +25,13 @@ except ImportError:
 
 try:
     from paddleocr import PaddleOCR
-    import logging
+    import logging as paddle_logging
     # Suppress PaddleOCR verbose logs
-    logging.getLogger("ppocr").setLevel(logging.ERROR)
+    paddle_logging.getLogger("ppocr").setLevel(paddle_logging.ERROR)
     PADDLE_AVAILABLE = True
-except ImportError:
+except Exception:
     PADDLE_AVAILABLE = False
-
-from google import genai
+    PaddleOCR = None
 
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -66,8 +65,6 @@ class DocVaultAgent:
         else:
             self.ocr = None
             print("[DocVault] ⚠ PaddleOCR not available. Run: pip install paddleocr paddlepaddle")
-
-        self.gemini_client = genai.Client()
         
         self.uploads_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "uploads")
         os.makedirs(self.uploads_dir, exist_ok=True)
@@ -235,105 +232,40 @@ class DocVaultAgent:
         image: Image.Image,
         doc_type: str
     ) -> dict:
-        """Use Gemini Vision to extract JSON structured fields."""
-        
-        # Prepare the image
-        img_byte_arr = io.BytesIO()
-        image.save(img_byte_arr, format='JPEG')
-        img_bytes = img_byte_arr.getvalue()
+        """Extract structured fields from OCR text only (no LLM enrichment)."""
         
         # Prepare the OCR text
         ocr_text = "\n".join([f"{b.text}" for b in ocr_blocks])
         
-        prompt = f"""
-        You are a document extraction specialist for Indian government and official documents.
-        Extract structured fields from this '{doc_type}' document.
-        
-        I have provided both the raw OCR text blocks and the document image. 
-        Use the image to understand the layout and context of the text.
-        
-        Return ONLY valid JSON. Do not use markdown wrappers like ```json.
-        Include a 'confidence' field (0.0 to 1.0) for each extracted value.
-        """
+        # Basic regex-based extraction for common document types
+        extracted = {}
         
         if doc_type.lower() == "aadhaar":
-            prompt += """
-            Required keys: {
-                "name": {"value": "...", "confidence": 0.9},
-                "dob": {"value": "...", "confidence": 0.9},
-                "gender": {"value": "...", "confidence": 0.9},
-                "address": {"value": "...", "confidence": 0.9},
-                "aadhaar_number_last4": {"value": "...", "confidence": 0.9},
-                "pincode": {"value": "...", "confidence": 0.9}
-            }
-            Note: For aadhaar_number_last4, extract ONLY the last 4 digits of the Aadhaar number.
-            """
-        elif doc_type.lower() == "pan":
-            prompt += """
-            Required keys: {
-                "name": {"value": "...", "confidence": 0.9},
-                "father_name": {"value": "...", "confidence": 0.9},
-                "dob": {"value": "...", "confidence": 0.9},
-                "pan_number": {"value": "...", "confidence": 0.9}
-            }
-            """
-        elif doc_type.lower() == "passport":
-            prompt += """
-            Required keys: {
-                "name": {"value": "...", "confidence": 0.9},
-                "dob": {"value": "...", "confidence": 0.9},
-                "gender": {"value": "...", "confidence": 0.9},
-                "passport_number": {"value": "...", "confidence": 0.9},
-                "expiry_date": {"value": "...", "confidence": 0.9},
-                "nationality": {"value": "...", "confidence": 0.9},
-                "place_of_birth": {"value": "...", "confidence": 0.9},
-                "address": {"value": "...", "confidence": 0.9}
-            }
-            """
-        elif doc_type.lower() == "marksheet":
-            prompt += """
-            Required keys: {
-                "name": {"value": "...", "confidence": 0.9},
-                "college": {"value": "...", "confidence": 0.9},
-                "university": {"value": "...", "confidence": 0.9},
-                "degree": {"value": "...", "confidence": 0.9},
-                "year_of_passing": {"value": "...", "confidence": 0.9},
-                "percentage": {"value": "...", "confidence": 0.9}
-            }
-            """
-        else:
-            prompt += """
-            Extract all key-value pairs present in the document.
-            Format: {
-                "key_name": {"value": "...", "confidence": 0.9}
-            }
-            """
+            # Extract Aadhaar last 4 digits
+            aadhaar_match = re.search(r'\b(\d{4})\s*(\d{4})\s*(\d{4})\b', ocr_text)
+            if aadhaar_match:
+                extracted["aadhaar_number_last4"] = {"value": aadhaar_match.group(3), "confidence": 0.8}
             
-        prompt += f"\n\nRAW OCR TEXT:\n{ocr_text}"
-
-        contents = [
-            prompt,
-            image
-        ]
-        
-        try:
-            response = self.gemini_client.models.generate_content(
-                model='gemini-2.0-flash-lite',
-                contents=contents
-            )
-            text = response.text.strip()
-            if text.startswith("```json"):
-                text = text[7:]
-            if text.startswith("```"):
-                text = text[3:]
-            if text.endswith("```"):
-                text = text[:-3]
+            # Extract DOB
+            dob_match = re.search(r'\b(\d{2}[/-]\d{2}[/-]\d{4})\b', ocr_text)
+            if dob_match:
+                extracted["dob"] = {"value": dob_match.group(1), "confidence": 0.7}
                 
-            return json.loads(text.strip())
-        except Exception as e:
-            print(f"[DocVault] Gemini extraction failed: {e}")
-            # Fallback to empty if LLM fails
-            return {}
+        elif doc_type.lower() == "pan":
+            # Extract PAN number
+            pan_match = re.search(r'\b([A-Z]{5}[0-9]{4}[A-Z]{1})\b', ocr_text)
+            if pan_match:
+                extracted["pan_number"] = {"value": pan_match.group(1), "confidence": 0.9}
+                
+        # Extract name (first line that looks like a name)
+        lines = ocr_text.split('\n')
+        for line in lines:
+            if len(line.strip()) > 3 and re.match(r'^[A-Z][a-z]+(\s+[A-Z][a-z]+)+$', line.strip()):
+                extracted["name"] = {"value": line.strip(), "confidence": 0.6}
+                break
+        
+        print(f"[DocVault] Basic extraction completed (no LLM), found {len(extracted)} fields")
+        return extracted
 
     def _normalize_fields(self, extracted: dict) -> dict:
         """Normalize formats for names, dates, phones, etc."""

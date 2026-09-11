@@ -6,14 +6,50 @@ from pathlib import Path
 from datetime import datetime
 
 
-async def scriptgen(scraped_form, data_requirements: list, session_id: str) -> str:
+async def scriptgen(scraped_form, session_id: str, pre_filled_values: dict = None) -> str:
     """
     Generate a Playwright Python script for this specific form.
+    Uses confirmed values from session.pre_filled_values.
+    Uses executor_field_handler for proper field type handling.
     Returns just the script content (not a tuple).
     """
     print(f"[ScriptGen] Starting script generation for session {session_id}")
+    print(f"[ScriptGen] Using confirmed values keys: {list((pre_filled_values or {}).keys())}")
     
-    # Normalize scraped_form — handle both dict and object
+    # Use new executor field handler
+    from agents.executor_field_handler import generate_autofill_script
+    
+    try:
+        session_dict = {
+            'session_id': session_id,
+            'url': scraped_form.get('url') if isinstance(scraped_form, dict) else scraped_form.url,
+            'scraped_form': scraped_form if isinstance(scraped_form, dict) else scraped_form.model_dump(),
+            'pre_filled_values': pre_filled_values or {}
+        }
+        
+        script_content = generate_autofill_script(session_dict, '')
+        
+        # Save script to file
+        upload_dir = os.getenv("UPLOAD_DIR", "./uploads")
+        scripts_dir = os.path.join(upload_dir, "scripts")
+        os.makedirs(scripts_dir, exist_ok=True)
+        script_path = os.path.join(scripts_dir, f"{session_id}.py")
+        
+        with open(script_path, "w", encoding="utf-8") as f:
+            f.write(script_content)
+        
+        print(f"[ScriptGen] ✓ Script generated using executor_field_handler ({len(script_content)} chars)")
+        print(f"[ScriptGen] ✓ Script saved: {script_path}")
+        return script_content
+        
+    except Exception as e:
+        print(f"[ScriptGen] ⚠ executor_field_handler failed: {e}")
+        print(f"[ScriptGen] Falling back to legacy generation")
+    
+    # Legacy fallback code below
+    print(f"[ScriptGen] Starting legacy script generation for session {session_id}")
+    
+    # Normalize scraped_form
     if isinstance(scraped_form, dict):
         url = scraped_form.get("url", "")
         fields = scraped_form.get("fields", [])
@@ -28,47 +64,49 @@ async def scriptgen(scraped_form, data_requirements: list, session_id: str) -> s
     print(f"[ScriptGen] URL: {url}")
     print(f"[ScriptGen] Fields to fill: {len(fields)}")
     
-    # Normalize data_requirements — handle both dicts and objects
-    req_map = {}
-    for item in data_requirements:
-        if isinstance(item, dict):
-            req_map[item.get("field_id")] = item
-        else:
-            req_map[item.field_id] = {
-                "field_id": item.field_id,
-                "value": item.value,
-                "document_path": getattr(item, "document_path", None)
-            }
+    if not pre_filled_values:
+        pre_filled_values = {}
     
-    # Build field instructions for the script
+    # Build field instructions using pre_filled_values
     field_instructions = []
     for field in fields:
         if isinstance(field, dict):
             fid = field.get("field_id")
             label = field.get("label", "")
+            name = field.get("name", "")
             ftype = field.get("field_type", "text")
             selector = field.get("selector", "")
-            options = field.get("options", [])
+            raw_options = field.get("options", [])
         else:
             fid = field.field_id
             label = field.label
+            name = field.name
             ftype = field.field_type
             selector = field.selector
-            options = field.options
+            raw_options = field.options
         
         if ftype in ("submit", "reset", "button", "hidden"):
             continue
         
-        req = req_map.get(fid, {})
-        value = req.get("value") if isinstance(req, dict) else getattr(req, "value", None)
-        doc_path = req.get("document_path") if isinstance(req, dict) else getattr(req, "document_path", None)
+        # Normalize options to list of strings for script
+        options = []
+        for opt in raw_options:
+            if isinstance(opt, str):
+                options.append(opt)
+            elif isinstance(opt, dict):
+                options.append(opt.get('value', opt.get('label', '')))
+        
+        # Look up value from pre_filled_values using stable key (name or field_id)
+        from utils.generic_mapper import compute_stable_field_key
+        stable_key = compute_stable_field_key(field if isinstance(field, dict) else field.model_dump())
+        value = pre_filled_values.get(stable_key, "")
         
         field_instructions.append({
             "label": label,
             "type": ftype,
             "selector": selector,
             "value": value,
-            "file_path": doc_path,
+            "file_path": None,
             "options": options
         })
     
@@ -266,7 +304,8 @@ def _generate_script_without_ai(url, field_instructions, submit_selector, has_ca
 
 
 async def _generate_script_with_ai(url, field_instructions, submit_selector, has_captcha, session_id) -> str:
-    """Try to generate script using configured AI (Gemini or Claude)."""
+    """Try to generate script using configured AI (OpenRouter LLM)."""
+    from utils.llm import get_llm_client
     
     # Build the prompt
     field_summary = json.dumps(field_instructions, indent=2, default=str)
@@ -299,14 +338,15 @@ EVENT format to print:
 
 Return ONLY the Python script. No explanation. No markdown code blocks."""
 
-    # Try Gemini first
+    # Use OpenRouter LLM
     try:
-        from google import genai
-        api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
-        if api_key:
-            client = genai.Client(api_key=api_key)
-            response = client.models.generate_content(model="gemini-2.0-flash-lite", contents=prompt)
-            script = response.text.strip()
+        llm = get_llm_client()
+        if llm.api_key:
+            script = await llm.generate_content(
+                prompt=prompt,
+                temperature=0.1,
+                max_tokens=4000
+            )
             # Remove markdown code blocks if AI wrapped it
             if script.startswith("```python"):
                 script = script[9:]
@@ -316,28 +356,6 @@ Return ONLY the Python script. No explanation. No markdown code blocks."""
                 script = script[:-3]
             return script.strip()
     except Exception as e:
-        print(f"[ScriptGen] Gemini failed: {e}")
+        print(f"[ScriptGen] LLM failed: {e}")
     
-    # Try Anthropic Claude
-    try:
-        import anthropic
-        api_key = os.getenv("ANTHROPIC_API_KEY")
-        if api_key:
-            client = anthropic.Anthropic(api_key=api_key)
-            response = client.messages.create(
-                model="claude-3-5-sonnet-20241022",
-                max_tokens=4000,
-                messages=[{"role": "user", "content": prompt}]
-            )
-            script = response.content[0].text.strip()
-            if script.startswith("```python"):
-                script = script[9:]
-            if script.startswith("```"):
-                script = script[3:]
-            if script.endswith("```"):
-                script = script[:-3]
-            return script.strip()
-    except Exception as e:
-        print(f"[ScriptGen] Claude failed: {e}")
-    
-    raise Exception("No AI provider available — both Gemini and Claude failed")
+    raise Exception("LLM provider unavailable or failed")

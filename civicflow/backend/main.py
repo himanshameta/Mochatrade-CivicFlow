@@ -11,7 +11,7 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-from fastapi import FastAPI, WebSocket, Request
+from fastapi import FastAPI, WebSocket, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
@@ -33,8 +33,7 @@ from config import settings
 logger.info("="*60)
 logger.info("CivicFlow Configuration")
 logger.info("Python executable: %s", sys.executable)
-logger.info("Gemini API Key: %s", "✓ configured" if settings.gemini_api_key else "✗ missing")
-logger.info("Gemini Model: %s", settings.gemini_model or "not set")
+logger.info("OpenRouter API Key: %s", "✓ configured" if settings.openrouter_api_key else "✗ missing")
 
 # Test PaddleOCR import
 try:
@@ -64,6 +63,7 @@ from api.documents import router as documents_router
 from api.chat import router as chat_router
 from api.search import router as search_router
 from api.telegram import router as telegram_router
+from api.confirm_routes import router as confirm_router
 
 # ── App factory ────────────────────────────────────────────────────────────
 app = FastAPI(
@@ -164,7 +164,7 @@ async def health():
     from db.mongo import is_connected as mongo_ok
     return {
         "status": "healthy",
-        "gemini_api":  "configured" if os.getenv("GEMINI_API_KEY") else "not_configured",
+        "openrouter_api": "configured" if os.getenv("OPENROUTER_API_KEY") else "not_configured",
         "telegram":    "configured" if os.getenv("TELEGRAM_BOT_TOKEN") else "not_configured",
         "mongo":       "connected" if mongo_ok() else "disconnected",
         "redis_url":   os.getenv("REDIS_URL", "redis://localhost:6379"),
@@ -179,10 +179,11 @@ async def health_runtime():
     
     diagnostics = {
         "python_executable": sys.executable,
-        "gemini": {
-            "api_key_configured": bool(settings.gemini_api_key),
-            "api_key_masked": settings.gemini_api_key[:10] + "..." if settings.gemini_api_key else None,
-            "model": settings.gemini_model,
+        "openrouter": {
+            "api_key_configured": bool(settings.openrouter_api_key),
+            "api_key_masked": settings.openrouter_api_key[:10] + "..." if settings.openrouter_api_key else None,
+            "site_url": settings.openrouter_site_url,
+            "site_name": settings.openrouter_site_name,
         },
         "imports": {
             "paddle": "ok",
@@ -214,7 +215,7 @@ async def startup_event():
     logger.info("=" * 60)
     logger.info("CivicFlow API v1.0.0 starting...")
     logger.info("Upload dir  : %s", upload_dir)
-    logger.info("Gemini API  : %s", "OK" if os.getenv("GEMINI_API_KEY") else "NOT SET")
+    logger.info("OpenRouter  : %s", "OK" if os.getenv("OPENROUTER_API_KEY") else "NOT SET")
     logger.info("Telegram    : %s", "OK" if os.getenv("TELEGRAM_BOT_TOKEN") else "NOT SET")
 
     mongo_uri = os.getenv("MONGO_URI", os.getenv("MONGODB_URI", ""))

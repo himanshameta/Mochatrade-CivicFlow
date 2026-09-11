@@ -12,6 +12,134 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from models.form_models import FormField, ScrapedForm
 
 
+def normalize_field_type(raw_type: str, tag_name: str) -> str:
+    """Normalize any HTML input type to our supported set."""
+    raw = (raw_type or "").strip().lower()
+    tag = (tag_name or "").strip().lower()
+
+    # Handle non-input tags
+    if tag == "textarea":
+        return "textarea"
+    if tag == "select":
+        return "select"
+
+    # If no type specified, default to text
+    if not raw:
+        return "text"
+
+    # Direct supported types
+    direct = {
+        "text", "email", "tel", "date", "number", "radio",
+        "checkbox", "file", "password", "search", "url",
+        "hidden", "time", "month", "week", "datetime-local", "textarea"
+    }
+    if raw in direct:
+        return raw
+
+    # Map unsupported types to equivalents
+    fallback_map = {
+        "submit": "hidden",
+        "button": "hidden",
+        "reset": "hidden",
+        "image": "hidden",
+        "color": "text",
+        "range": "number"
+    }
+    return fallback_map.get(raw, "text")
+
+
+def is_security_field(name: str, field_id: str) -> bool:
+    """Check if field is a security/spam field that should be filtered out."""
+    security_terms = ['csrf', 'token', '_method', 'honeypot', 'authenticity', 'captcha-response']
+    name_lower = (name or "").lower()
+    id_lower = (field_id or "").lower()
+    
+    return any(term in name_lower or term in id_lower for term in security_terms)
+
+
+def is_ignorable_field(element: Tag) -> bool:
+    """Check if field should be ignored (not user-fillable)."""
+    # Skip disabled fields
+    if element.has_attr("disabled"):
+        return True
+    
+    # Skip readonly fields (unless required for review)
+    if element.has_attr("readonly") and not element.has_attr("required"):
+        return True
+    
+    # Skip submit/button/reset types
+    input_type = (element.get("type", "") or "").lower()
+    if input_type in ["submit", "button", "reset", "image"]:
+        return True
+    
+    return False
+
+
+def is_search_form(form: Tag) -> bool:
+    """Detect if form is just a site search box (should be skipped)."""
+    inputs = form.find_all(["input", "select", "textarea"])
+    
+    # Only 1-2 fields = likely search
+    if len(inputs) > 2:
+        return False
+    
+    for inp in inputs:
+        name = (inp.get("name", "") or "").lower()
+        field_id = (inp.get("id", "") or "").lower()
+        placeholder = (inp.get("placeholder", "") or "").lower()
+        field_type = (inp.get("type", "") or "").lower()
+        
+        # Check for search-related attributes
+        if field_type == "search":
+            return True
+        
+        search_terms = ["search", "query", "q", "keyword", "find"]
+        if any(term in name or term in field_id or term in placeholder for term in search_terms):
+            return True
+    
+    return False
+
+
+def score_form(form: Tag) -> int:
+    """Score a form to determine if it's a real user form vs search/nav."""
+    score = 0
+    inputs = form.find_all(["input", "select", "textarea"])
+    
+    # Check if it's a search form (heavily penalize)
+    if is_search_form(form):
+        return -100
+    
+    for element in inputs:
+        tag_name = element.name
+        input_type = (element.get("type", "text") or "text").lower()
+        
+        # Skip non-user fields
+        if is_ignorable_field(element):
+            continue
+        
+        # Score by field type (higher = more likely real form)
+        if input_type in ["text", "email", "tel"]:
+            score += 3
+        elif input_type == "email":
+            score += 3
+        elif input_type == "tel":
+            score += 2
+        elif tag_name == "textarea":
+            score += 2
+        elif tag_name == "select" or input_type in ["radio", "checkbox"]:
+            score += 1
+    
+    # Bonus for submit button with form-like text
+    submit = form.find("button") or form.find("input", {"type": "submit"})
+    if submit:
+        submit_text = (submit.get_text() or submit.get("value", "")).lower()
+        form_keywords = ["submit", "register", "apply", "send", "continue", "next", "save"]
+        if any(kw in submit_text for kw in form_keywords):
+            score += 5
+    
+    return score
+
+
 def normalize_label(text: str) -> str:
     """Normalize label text: strip whitespace, remove asterisks, title case."""
     if not text:
@@ -23,38 +151,68 @@ def normalize_label(text: str) -> str:
 
 
 def get_label_for_element(element: Tag, soup: BeautifulSoup) -> str:
-    """Extract label text for an input element."""
-    # Try id-matching label
+    """Extract label text for an input element with priority strategy."""
+    # 1. Try id-matching label
     element_id = element.get("id", "")
     if element_id:
         label = soup.find("label", {"for": element_id})
         if label:
             return normalize_label(label.get_text())
     
-    # Try parent label
+    # 2. Try parent label
     parent = element.parent
     if parent and parent.name == "label":
         return normalize_label(parent.get_text())
     
-    # Try aria-label
+    # 3. Try aria-label
     aria_label = element.get("aria-label", "")
     if aria_label:
         return normalize_label(aria_label)
     
-    # Try preceding sibling text
-    prev = element.find_previous_sibling(string=True)
-    if prev and prev.strip():
-        return normalize_label(prev.strip())
+    # 4. Try aria-labelledby
+    aria_labelledby = element.get("aria-labelledby", "")
+    if aria_labelledby:
+        ref_elem = soup.find(id=aria_labelledby)
+        if ref_elem:
+            return normalize_label(ref_elem.get_text())
     
-    # Try previous label sibling
+    # 5. Try previous label sibling
     prev_label = element.find_previous_sibling("label")
     if prev_label:
         return normalize_label(prev_label.get_text())
     
-    # Fallback to name or placeholder
-    name = element.get("name", "")
+    # 6. Try preceding sibling text node
+    prev = element.find_previous_sibling(string=True)
+    if prev and prev.strip():
+        return normalize_label(prev.strip())
+    
+    # 7. Try fieldset legend (for radio groups)
+    fieldset = element.find_parent("fieldset")
+    if fieldset:
+        legend = fieldset.find("legend")
+        if legend:
+            return normalize_label(legend.get_text())
+    
+    # 8. Try nearby span/div text
+    for tag in ['span', 'div', 'p']:
+        prev_elem = element.find_previous_sibling(tag)
+        if prev_elem:
+            text = prev_elem.get_text(strip=True)
+            if text and len(text) < 50:
+                return normalize_label(text)
+    
+    # 9. Fallback to placeholder
     placeholder = element.get("placeholder", "")
-    return normalize_label(placeholder or name or "Unnamed Field")
+    if placeholder:
+        return normalize_label(placeholder)
+    
+    # 10. Fallback to name
+    name = element.get("name", "")
+    if name:
+        return normalize_label(name)
+    
+    # 11. Final fallback
+    return "Unnamed Field"
 
 
 def generate_selector(element: Tag, form: Tag) -> str:
@@ -116,16 +274,41 @@ def map_input_type(element: Tag) -> str:
 
 
 def detect_captcha(html: str) -> tuple[bool, Optional[str]]:
-    """Detect CAPTCHA presence and type."""
-    html_lower = html.lower()
+    """Detect CAPTCHA presence and type (stricter rules to avoid false positives)."""
+    from bs4 import BeautifulSoup
     
-    if "recaptcha" in html_lower:
+    soup = BeautifulSoup(html, "lxml")
+    
+    # Check for reCAPTCHA iframe
+    recaptcha_iframe = soup.find("iframe", src=re.compile(r"recaptcha", re.I))
+    if recaptcha_iframe:
         return True, "recaptcha"
-    elif "hcaptcha" in html_lower:
+    
+    # Check for reCAPTCHA response textarea
+    recaptcha_response = soup.find("textarea", {"name": "g-recaptcha-response"})
+    if recaptcha_response:
+        return True, "recaptcha"
+    
+    # Check for hCaptcha
+    hcaptcha_div = soup.find("div", {"class": re.compile(r"h-captcha", re.I)})
+    if hcaptcha_div:
         return True, "hcaptcha"
-    elif "captcha" in html_lower:
+    
+    # Check for hCaptcha response
+    hcaptcha_response = soup.find("textarea", {"name": "h-captcha-response"})
+    if hcaptcha_response:
+        return True, "hcaptcha"
+    
+    # Check for explicit CAPTCHA-related IDs/classes (but not just the word "captcha")
+    captcha_container = soup.find(attrs={"id": re.compile(r"captcha[-_](?:container|box|field|image)", re.I)})
+    if captcha_container:
         return True, "image"
     
+    captcha_class = soup.find(attrs={"class": re.compile(r"captcha[-_](?:container|box|field|image)", re.I)})
+    if captcha_class:
+        return True, "image"
+    
+    # No CAPTCHA detected
     return False, None
 
 
@@ -191,82 +374,65 @@ async def scraper(html: str, url: str) -> Optional[dict]:
     try:
         soup = BeautifulSoup(html, "lxml")
         
-        # Strategy 1: Find largest form element
+        # Find all forms and score them
         all_forms = soup.find_all("form")
         print(f"[Scraper] Found {len(all_forms)} form(s) in HTML")
         
-        # Strategy 2: If no <form> tag, look for inputs anywhere on the page
-        # (some sites put inputs outside a form tag)
-        if not all_forms:
-            print("[Scraper] No <form> tag found, searching for loose inputs...")
+        target_form = None
+        
+        if all_forms:
+            # Score each form and pick the best
+            scored_forms = [(form, score_form(form)) for form in all_forms]
+            scored_forms.sort(key=lambda x: x[1], reverse=True)
+            
+            # Log scores for debugging
+            for i, (form, score) in enumerate(scored_forms[:3], 1):
+                print(f"[Scraper] Form {i} score: {score}")
+            
+            # Pick highest scoring form with positive score
+            if scored_forms[0][1] > 0:
+                target_form = scored_forms[0][0]
+            else:
+                print("[Scraper] All forms scored negative (likely search forms)")
+        
+        # Fallback: if no <form> tag, treat whole page as form
+        if not target_form:
+            print("[Scraper] No valid <form> tag found, searching for loose inputs...")
             all_inputs = soup.find_all(["input", "select", "textarea"])
             print(f"[Scraper] Found {len(all_inputs)} loose input elements")
             if not all_inputs:
                 print("[Scraper] ✗ No form fields found anywhere on page")
                 return None
-            # Treat the whole page as one form
             target_form = soup
-        else:
-            # Pick the form with the most inputs
-            target_form = max(
-                all_forms,
-                key=lambda f: len(f.find_all(["input", "select", "textarea"]))
-            )
-            form_inputs = target_form.find_all(["input", "select", "textarea"])
-            print(f"[Scraper] Selected form with {len(form_inputs)} fields")
         
         fields = []
         seen_names = set()
         
         for element in target_form.find_all(["input", "select", "textarea"]):
-            field_type = element.get("type", "text").lower()
+            # Skip ignorable fields
+            if is_ignorable_field(element):
+                continue
             
-            # Skip hidden, submit, reset, button types
-            if field_type in ("submit", "reset", "button", "image"):
+            tag_name = element.name
+            raw_field_type = element.get("type", "text").lower()
+            field_type = normalize_field_type(raw_field_type, tag_name)
+            
+            # Skip hidden fields
+            if field_type == "hidden":
                 continue
             
             name = element.get("name", "")
             elem_id = element.get("id", "")
+            
+            # Skip security/spam fields
+            if is_security_field(name, elem_id):
+                continue
+            
             placeholder = element.get("placeholder", "")
             required = element.has_attr("required") or element.get("required") == "required"
             
             # Get label text — try multiple strategies
-            label_text = ""
-            
-            # Strategy 1: <label for="id">
-            if elem_id:
-                label_tag = soup.find("label", attrs={"for": elem_id})
-                if label_tag:
-                    label_text = label_tag.get_text(strip=True)
-            
-            # Strategy 2: parent <label>
-            if not label_text:
-                parent = element.find_parent("label")
-                if parent:
-                    label_text = parent.get_text(strip=True)
-            
-            # Strategy 3: preceding sibling text or label
-            if not label_text:
-                for sibling in element.find_previous_siblings():
-                    if sibling.name == "label":
-                        label_text = sibling.get_text(strip=True)
-                        break
-                    elif sibling.name in ("p", "div", "span", "td", "th"):
-                        text = sibling.get_text(strip=True)
-                        if text and len(text) < 100:
-                            label_text = text
-                            break
-            
-            # Strategy 4: aria-label attribute
-            if not label_text:
-                label_text = element.get("aria-label", "")
-            
-            # Strategy 5: fallback to name or placeholder
-            if not label_text:
-                label_text = name or placeholder or elem_id or f"field_{len(fields)+1}"
-            
-            # Clean label
-            label_text = label_text.strip().rstrip("*:").strip()
+            label_text = get_label_for_element(element, soup)
             
             # Skip duplicate names (e.g. same radio group counted once)
             dedup_key = name or elem_id or label_text
@@ -274,7 +440,18 @@ async def scraper(html: str, url: str) -> Optional[dict]:
                 continue
             seen_names.add(dedup_key)
             
-            # Build selector — priority: id > name > placeholder
+            # Build selector priority list
+            selector_priority = []
+            if label_text:
+                selector_priority.append(f"getByLabel('{label_text}')")
+            if name:
+                selector_priority.append(f"[name='{name}']")
+            if elem_id:
+                selector_priority.append(f"#{elem_id}")
+            if placeholder:
+                selector_priority.append(f"[placeholder='{placeholder}']")
+            
+            # Primary selector (first priority)
             if elem_id:
                 selector = f"#{elem_id}"
             elif name:
@@ -282,34 +459,56 @@ async def scraper(html: str, url: str) -> Optional[dict]:
             elif placeholder:
                 selector = f"[placeholder='{placeholder}']"
             else:
-                selector = element.name  # Last resort
+                selector = element.name
             
-            # Get options for select
+            # Get options for select/radio
             options = []
-            if element.name == "select":
-                options = [
-                    opt.get("value", opt.get_text(strip=True))
-                    for opt in element.find_all("option")
-                    if opt.get("value") and opt.get("value") not in ("", "0", "select", "choose")
-                ]
+            if tag_name == "select":
+                for opt in element.find_all("option"):
+                    opt_val = opt.get("value", "")
+                    opt_text = opt.get_text(strip=True)
+                    if opt_val and opt_val not in ("", "0", "select", "choose"):
+                        options.append({"value": opt_val, "label": opt_text or opt_val})
+            elif field_type == "radio":
+                # For radio, collect all options with same name
+                radio_group = target_form.find_all("input", {"name": name, "type": "radio"})
+                for radio in radio_group:
+                    radio_val = radio.get("value", "")
+                    radio_label = get_label_for_element(radio, soup)
+                    if radio_val:
+                        options.append({"value": radio_val, "label": radio_label})
             
             import uuid
             fields.append({
                 "field_id": str(uuid.uuid4()),
                 "label": label_text,
-                "field_type": field_type if element.name != "select" else "select",
+                "field_type": field_type,
                 "name": name,
                 "id_attr": elem_id,
                 "placeholder": placeholder,
                 "required": required,
                 "options": options,
                 "selector": selector,
-                "section": ""
+                "selector_priority": selector_priority,
+                "section": get_section_name(element),
+                "order": len(fields)  # Preserve order
             })
         
         if not fields:
             print("[Scraper] ✗ Found form tag but extracted 0 fields")
-            return None
+            # Return structured warning instead of None
+            return {
+                "url": url,
+                "page_title": soup.title.string if soup.title else "",
+                "form_html": "",
+                "fields": [],
+                "submit_button_selector": "button[type='submit']",
+                "has_captcha": False,
+                "has_file_upload": False,
+                "captcha_type": None,
+                "scraped_at": datetime.now().isoformat(),
+                "scrape_warning": "No fillable user fields found"
+            }
         
         # Find submit button
         submit_button = (
@@ -327,17 +526,8 @@ async def scraper(html: str, url: str) -> Optional[dict]:
         else:
             submit_selector = "button[type='submit']"
         
-        # Detect CAPTCHA
-        html_lower = html.lower()
-        has_captcha = any(word in html_lower for word in ["recaptcha", "hcaptcha", "captcha"])
-        if "recaptcha" in html_lower:
-            captcha_type = "recaptcha"
-        elif "hcaptcha" in html_lower:
-            captcha_type = "hcaptcha"
-        elif has_captcha:
-            captcha_type = "image"
-        else:
-            captcha_type = None
+        # Detect CAPTCHA with stricter rules
+        has_captcha, captcha_type = detect_captcha(html)
         
         has_file_upload = any(f["field_type"] == "file" for f in fields)
         
@@ -346,7 +536,7 @@ async def scraper(html: str, url: str) -> Optional[dict]:
         from datetime import datetime
         return {
             "url": url,
-            "page_title": BeautifulSoup(html, "lxml").title.string if BeautifulSoup(html, "lxml").title else "",
+            "page_title": soup.title.string if soup.title else "",
             "form_html": str(target_form)[:5000],  # Truncate for storage
             "fields": fields,
             "submit_button_selector": submit_selector,

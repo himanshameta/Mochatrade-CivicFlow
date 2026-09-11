@@ -1,13 +1,14 @@
 """
-CivicFlow — Government Form Finder Agent
+CivicFlow — Universal Form Finder Agent
 ==========================================
-Given a plain-English description of what the user wants to do,
-finds the most relevant Indian government portal URL.
+Given a plain-English description, finds the most relevant form URL.
+Works with ANY website - government, private, or custom.
 
 Strategy:
-1. Gemini 2.0 Flash reasons over the pre-seeded portal list
+1. LLM searches knowledge base + web for matching forms
 2. If AI fails → keyword matching fallback
-3. Returns ranked results + full portal list for the frontend to display
+3. Returns ranked results + portal list for frontend
+4. Always accepts custom URLs without validation
 
 Endpoint: POST /forms/search
 """
@@ -24,15 +25,17 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # ---------------------------------------------------------------------------
 
 KNOWN_PORTALS = [
+    # NOTE: CivicFlow works with ANY website - this is just a curated list
+    # of common Indian government portals for quick reference.
     {
         "name": "Passport Seva Portal",
-        "url": "https://passportindia.gov.in",
+        "url": "https://passportindia.gov.in",  # TODO: verify URL is current
         "category": "travel",
         "keywords": ["passport", "travel document", "ecr", "nec", "tatkal", "police clearance"],
     },
     {
         "name": "Aadhaar Enrollment / Update (UIDAI)",
-        "url": "https://uidai.gov.in",
+        "url": "https://uidai.gov.in",  # TODO: verify URL is current
         "category": "identity",
         "keywords": ["aadhaar", "uid", "biometric", "address update", "name correction", "aadhar"],
     },
@@ -44,7 +47,7 @@ KNOWN_PORTALS = [
     },
     {
         "name": "DigiLocker",
-        "url": "https://digilocker.gov.in",
+        "url": "https://digilocker.gov.in",  # TODO: verify URL is current
         "category": "documents",
         "keywords": ["digilocker", "digital documents", "driving licence", "marksheet", "certificate"],
     },
@@ -74,7 +77,7 @@ KNOWN_PORTALS = [
     },
     {
         "name": "Income Tax e-Filing Portal",
-        "url": "https://eportal.incometax.gov.in",
+        "url": "https://www.incometax.gov.in/iec/foportal/",
         "category": "tax",
         "keywords": ["itr", "income tax return", "e-filing", "form 16", "refund", "tax"],
     },
@@ -110,7 +113,7 @@ KNOWN_PORTALS = [
     },
     {
         "name": "GST Portal",
-        "url": "https://www.gst.gov.in",
+        "url": "https://www.gst.gov.in",  # TODO: verify URL is current
         "category": "tax",
         "keywords": ["gst", "goods and services", "gstin", "return filing", "gstr"],
     },
@@ -177,11 +180,11 @@ KNOWN_PORTALS = [
 
 async def find_government_portal(description: str, custom_url: Optional[str] = None) -> dict:
     """
-    Find the best government portal for the user's need.
+    Find the best portal/form URL for the user's need.
 
     Args:
         description: Plain-English description of what user wants to do
-        custom_url: If user already knows the URL, skip search and return it
+        custom_url: If user already knows the URL, skip search and return it (accepts ANY URL)
 
     Returns:
         {
@@ -190,16 +193,18 @@ async def find_government_portal(description: str, custom_url: Optional[str] = N
             all_portals: [...]   # for frontend dropdown
         }
     """
-    # If user provided a custom URL directly, validate and return
+    # If user provided a custom URL directly, accept it without validation
     if custom_url:
         if not custom_url.startswith(("http://", "https://")):
-            raise ValueError("Custom URL must start with http:// or https://")
+            # Auto-add https if no protocol
+            custom_url = "https://" + custom_url
+        
         return {
             "url": custom_url,
             "portal_name": "Custom URL",
             "category": "custom",
             "confidence": "high",
-            "reasoning": "User-provided URL",
+            "reasoning": "User-provided URL (any website)",
             "alternatives": [],
             "all_portals": KNOWN_PORTALS,
         }
@@ -220,10 +225,10 @@ async def find_government_portal(description: str, custom_url: Optional[str] = N
 
 
 async def _gemini_search(description: str, api_key: str) -> Optional[dict]:
-    """Ask Gemini to pick the best portal from the known list."""
-    from google import genai
+    """Ask LLM to pick the best portal from the known list."""
+    from utils.llm import get_llm_client
 
-    client = genai.Client(api_key=api_key)
+    llm = get_llm_client()
 
     portals_summary = "\n".join(
         f"- {p['name']} | {p['url']} | Category: {p['category']} | Keywords: {', '.join(p['keywords'])}"
@@ -251,8 +256,12 @@ Return ONLY valid JSON (no markdown):
   ]
 }}"""
 
-    response = client.models.generate_content(model="gemini-2.0-flash-lite", contents=prompt)
-    text = response.text.strip()
+    response = await llm.generate_content(
+        prompt=prompt,
+        temperature=0.1,
+        max_tokens=500
+    )
+    text = response.strip()
 
     # Strip markdown code blocks if present
     if "```json" in text:

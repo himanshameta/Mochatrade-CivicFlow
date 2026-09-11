@@ -1,7 +1,8 @@
 """
 CivicFlow — Chat API
 ======================
-REST and WebSocket endpoints for the LLM Counsellor agent.
+REST endpoints for the LLM Counsellor agent.
+WebSocket streaming removed - use REST endpoint only.
 """
 import os
 import sys
@@ -10,7 +11,7 @@ import asyncio
 from typing import Optional
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException, Depends, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -43,11 +44,11 @@ async def send_chat_message(request: ChatRequest, payload: dict = Depends(requir
     
     print(f"[Chat API] User {user_id} sent message: {request.message[:50]}...")
     
-    # Check if Gemini API key is configured
-    if not settings.gemini_api_key:
-        print("[Chat API] Gemini API key not configured")
+    # Check if OpenRouter API key is configured
+    if not settings.openrouter_api_key:
+        print("[Chat API] OpenRouter API key not configured")
         return ok("Chat unavailable", data={
-            "response": "The AI counsellor is currently unavailable. Please check back later.",
+            "response": "The AI counsellor is currently unavailable. Please configure OpenRouter API key.",
             "triggered_action": None,
             "stage": request.stage,
             "fallback_mode": True
@@ -68,15 +69,15 @@ async def send_chat_message(request: ChatRequest, payload: dict = Depends(requir
         print(f"[Chat API] Error: {error_type}: {error_msg}")
         traceback.print_exc()
         
-        # Check for Gemini quota/rate limit errors
+        # Check for OpenRouter quota/rate limit errors
         if "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg or "quota" in error_msg.lower():
-            print("[Chat API] Gemini quota exceeded, using fallback")
+            print("[Chat API] OpenRouter quota exceeded, using fallback")
             return ok("Quota exceeded", data={
                 "response": fallback_chat_response(request.message, request.stage),
                 "triggered_action": None,
                 "stage": request.stage,
                 "fallback_mode": True,
-                "error_reason": "gemini_quota_exceeded"
+                "error_reason": "openrouter_quota_exceeded"
             })
         
         # Generic error fallback
@@ -124,113 +125,3 @@ async def get_chat_history(session_id: str, payload: dict = Depends(require_auth
     history = session.get("conversation_history", [])
     # Return last 50 messages
     return ok("Success", data={"history": history[-50:]})
-
-
-@router.websocket("/ws/{session_id}")
-async def chat_websocket(websocket: WebSocket, session_id: str):
-    """
-    Real-time streaming chat endpoint.
-    Expects JSON: { "message": "hello", "stage": "welcome", "user_id": "xyz" }
-    Sends back tokens as they arrive, then a final message with the triggered_action if any.
-    """
-    await websocket.accept()
-    counsellor = get_counsellor()
-    db = await get_db()
-    
-    try:
-        while True:
-            data = await websocket.receive_text()
-            try:
-                payload = json.loads(data)
-            except json.JSONDecodeError:
-                await websocket.send_json({"error": "Invalid JSON"})
-                continue
-                
-            message = payload.get("message", "")
-            stage = payload.get("stage", "welcome")
-            user_id = payload.get("user_id", "anonymous")
-            
-            if not message:
-                continue
-
-            # We use the standard chat method but since we are simulating streaming for now
-            # (or we could use the stream=True from genai). For simplicity in this implementation,
-            # we'll use the async chat method and send typing indicators, then the full response,
-            # or if streaming is critical, we'd need a separate stream method in CounsellorAgent.
-            # We'll stream the response token by token by writing a quick generator here using the same context.
-            
-            # 1. Get Context
-            completion = await counsellor._calculate_profile_completion(user_id)
-            sys_prompt = counsellor._get_system_prompt(stage, completion)
-            
-            # 2. Get history
-            history = []
-            if db is not None:
-                session = await db.form_sessions.find_one({"session_id": session_id})
-                if session:
-                    history = session.get("conversation_history", [])
-                    
-            gemini_history = []
-            for msg in history:
-                role = "model" if msg["role"] == "assistant" else "user"
-                gemini_history.append({"role": role, "parts": [{"text": msg["message"]}]})
-                
-            # 3. Stream from Gemini
-            from google import genai
-            client = genai.Client()
-            
-            contents = gemini_history + [{"role": "user", "parts": [{"text": message}]}]
-            response_stream = client.models.generate_content_stream(
-                model="gemini-2.0-flash-lite", 
-                contents=contents,
-                config=genai.types.GenerateContentConfig(system_instruction=sys_prompt)
-            )
-            
-            full_text = ""
-            for chunk in response_stream:
-                if chunk.text:
-                    full_text += chunk.text
-                    # Send token chunk to client
-                    await websocket.send_json({"type": "token", "content": chunk.text})
-                    # Small sleep to allow other async tasks to run
-                    await asyncio.sleep(0.01)
-
-            # 4. Extract actions
-            triggered_action = None
-            import re
-            json_match = re.search(r'```json\s*(\{.*?\})\s*```', full_text, re.DOTALL)
-            if json_match:
-                try:
-                    action_data = json.loads(json_match.group(1))
-                    triggered_action = action_data.get("triggered_action")
-                    full_text = full_text[:json_match.start()].strip()
-                except Exception:
-                    pass
-
-            # 5. Save history
-            if db is not None:
-                now = datetime.utcnow()
-                new_msgs = [
-                    {"role": "user", "message": message, "timestamp": now},
-                    {"role": "assistant", "message": full_text, "timestamp": now}
-                ]
-                await db.form_sessions.update_one(
-                    {"session_id": session_id},
-                    {"$push": {"conversation_history": {"$each": new_msgs}}}
-                )
-                
-            # Send completion signal
-            await websocket.send_json({
-                "type": "done",
-                "triggered_action": triggered_action,
-                "stage": stage
-            })
-
-    except WebSocketDisconnect:
-        pass
-    except Exception as e:
-        print(f"[Chat WS Error] {e}")
-        try:
-            await websocket.send_json({"error": str(e)})
-        except:
-            pass

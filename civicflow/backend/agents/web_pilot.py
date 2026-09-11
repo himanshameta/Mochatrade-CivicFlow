@@ -11,23 +11,15 @@ import base64
 import json
 from typing import List, Optional
 
-from google import genai
-
 class WebPilot:
     """
     Advanced agent that interacts with web pages intelligently,
-    bypassing anti-bot protections like paste blockers and solving CAPTCHAs.
+    bypassing anti-bot protections like paste blockers.
+    Note: CAPTCHA solving disabled - requires manual intervention.
     """
 
     def __init__(self, page):
         self.page = page
-        
-        # Configure Gemini for vision tasks (CAPTCHA)
-        self.gemini_enabled = os.getenv("GEMINI_CAPTCHA_SOLVE", "true").lower() == "true"
-        if self.gemini_enabled:
-            self.vision_client = genai.Client()
-        else:
-            self.vision_client = None
 
     async def _detect_anti_paste_fields(self) -> List[str]:
         """
@@ -145,58 +137,7 @@ class WebPilot:
                 
             if await captcha_img.count() > 0:
                 print("[WebPilot] Detected image text CAPTCHA.")
-                
-                if not self.gemini_enabled or not self.vision_client:
-                    return {"status": "paused", "reason": "Text CAPTCHA detected but auto-solve disabled"}
-                    
-                # Try to auto-solve using Gemini Vision
-                img_element = captcha_img.first
-                img_bytes = await img_element.screenshot()
-                
-                print("[WebPilot] Solving CAPTCHA with Gemini Vision...")
-                
-                prompt = (
-                    "What text is shown in this CAPTCHA image? "
-                    "Return ONLY a JSON block like this: {\"text\": \"the_text\", \"confidence\": 0.95}. "
-                    "Do not include any other markdown or text."
-                )
-                
-                response = self.vision_client.models.generate_content(
-                    model="gemini-2.0-flash-lite",
-                    contents=[
-                        prompt,
-                        {"mime_type": "image/png", "data": img_bytes}
-                    ]
-                )
-                
-                result_text = response.text.strip()
-                if result_text.startswith("```json"):
-                    result_text = result_text[7:-3].strip()
-                    
-                try:
-                    data = json.loads(result_text)
-                    captcha_text = data.get("text", "")
-                    confidence = float(data.get("confidence", 0.0))
-                    
-                    if confidence >= 0.85 and captcha_text:
-                        print(f"[WebPilot] Successfully solved CAPTCHA: {captcha_text} (Conf: {confidence})")
-                        
-                        # Find the input field for this captcha (usually nearby)
-                        # We guess the input is named captcha or something similar
-                        captcha_input = self.page.locator('input[name*="captcha"], input[id*="captcha"], input[placeholder*="captcha"]')
-                        if await captcha_input.count() > 0:
-                            await captcha_input.first.fill(captcha_text)
-                            return {"status": "solved", "text": captcha_text}
-                        else:
-                            return {"status": "paused", "reason": "Solved CAPTCHA but couldn't find input field"}
-                            
-                    else:
-                        print(f"[WebPilot] CAPTCHA confidence too low ({confidence}). Asking user.")
-                        return {"status": "paused", "reason": f"Low confidence solving CAPTCHA ({confidence})"}
-                        
-                except json.JSONDecodeError:
-                    print("[WebPilot] Failed to parse Gemini response.")
-                    return {"status": "paused", "reason": "Failed to parse CAPTCHA response"}
+                return {"status": "paused", "reason": "Text CAPTCHA detected - requires manual intervention"}
                     
         except Exception as e:
             print(f"[WebPilot] Error handling CAPTCHA: {e}")

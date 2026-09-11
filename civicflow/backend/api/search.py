@@ -1,7 +1,7 @@
 """
 CivicFlow — Search API
 ======================
-Endpoints for searching and verifying government form URLs.
+Endpoints for searching and verifying form URLs on any website.
 """
 import os
 import sys
@@ -15,6 +15,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utils.auth import require_auth, ok
 from models.form_models import SearchFormRequest, VerifyUrlRequest
 from agents.form_search import FormSearchAgent
+from utils.form_detection import detect_form_on_page
 
 router = APIRouter(prefix="/search", tags=["Search"])
 
@@ -27,10 +28,11 @@ def get_search_agent() -> FormSearchAgent:
     return _form_search_agent
 
 
-@router.post("/form", summary="Search for a government form URL")
+@router.post("/form", summary="Search for a form URL")
 async def search_form(request: SearchFormRequest, payload: dict = Depends(require_auth)):
     """
-    Uses Gemini to identify the official portal URL for the requested service.
+    Uses AI to identify portal URLs for the requested service.
+    Works with any website - government, private, registration forms, etc.
     If user_url is provided, it validates and returns it instead.
     """
     agent = get_search_agent()
@@ -50,29 +52,24 @@ async def search_form(request: SearchFormRequest, payload: dict = Depends(requir
         raise HTTPException(status_code=500, detail={"success": False, "message": str(e), "data": {}})
 
 
-@router.post("/verify", summary="Verify a URL")
+@router.post("/verify", summary="Verify a form URL")
 async def verify_url(request: VerifyUrlRequest, payload: dict = Depends(require_auth)):
     """
-    Checks if a URL is reachable and is an official government domain.
+    Checks if a URL is reachable and contains a fillable form.
+    Works with any website - not restricted to government domains.
     """
-    agent = get_search_agent()
-    
     url = request.url
-    is_gov = agent._is_government_domain(url)
-    is_reachable = await agent.verify_url_accessible(url)
     
-    # Extract domain for display
-    from urllib.parse import urlparse
-    try:
-        if not url.startswith("http"):
-            domain = urlparse("https://" + url).netloc
-        else:
-            domain = urlparse(url).netloc
-    except:
-        domain = "unknown"
-        
+    # Detect form on the page
+    detection_result = await detect_form_on_page(url)
+    
     return ok("Verification complete", data={
-        "valid": is_reachable,
-        "is_government": is_gov,
-        "domain": domain
+        "url": url,
+        "reachable": detection_result["reachable"],
+        "has_form": detection_result["has_form"],
+        "form_count": detection_result["form_count"],
+        "field_count": detection_result["field_count"],
+        "site_title": detection_result["site_title"],
+        "is_government_domain": detection_result["is_government_domain"],
+        "message": detection_result["message"]
     })

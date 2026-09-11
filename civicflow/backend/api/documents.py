@@ -13,7 +13,7 @@ from pydantic import BaseModel
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from agents.doc_vault import DocVaultAgent
+from agents.doc_vault_v2 import DocVaultAgent
 from utils.auth import require_auth, ok
 from db.mongo import get_db
 from models.user_models import UploadedDocumentRef
@@ -72,6 +72,17 @@ async def upload_document(
             "message": f"Document processing is currently unavailable. Error: {_doc_vault_error or 'Unknown'}"
         })
     
+    # Check if OCR service is available
+    ocr_healthy = await agent.check_ocr_health()
+    if not ocr_healthy:
+        return ok("OCR service unavailable", data={
+            "doc_id": None,
+            "extracted_fields": {},
+            "fallback_mode": True,
+            "error_reason": "ocr_service_unavailable",
+            "message": "OCR service is not responding. Please ensure it's running on " + agent.ocr_api_url
+        })
+    
     try:
         result = await agent.process_document(
             file_bytes=file_bytes,
@@ -91,15 +102,15 @@ async def upload_document(
         print(f"[Documents API] Error: {error_type}: {error_msg}")
         traceback.print_exc()
         
-        # Check for Gemini quota errors
+        # Check for OpenRouter quota errors
         if "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg or "quota" in error_msg.lower():
-            print("[Documents API] Gemini quota exceeded, using basic OCR extraction")
-            # Return partial result with OCR only, no Gemini enrichment
+            print("[Documents API] OpenRouter quota exceeded, using basic OCR extraction")
+            # Return partial result with OCR only, no OpenRouter enrichment
             return ok("Document processed with limited features", data={
                 "doc_id": None,
                 "extracted_fields": {},
                 "fallback_mode": True,
-                "error_reason": "gemini_quota_exceeded",
+                "error_reason": "openrouter_quota_exceeded",
                 "message": "Document uploaded but AI enrichment is currently unavailable. Basic OCR extraction was attempted."
             })
         

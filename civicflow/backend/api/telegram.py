@@ -154,7 +154,7 @@ async def telegram_webhook(request: Request):
             await notifier.send_message(chat_id, "Welcome to CivicFlow! Please generate a link token from the app and send it to me using `/start YOUR_TOKEN`.")
 
     elif text.startswith("/status"):
-        if db:
+        if db is not None:
             # Find user by chat_id
             user = await db.users.find_one({"telegram_chat_id": chat_id})
             if user:

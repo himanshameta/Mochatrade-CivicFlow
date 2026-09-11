@@ -17,8 +17,34 @@ def _run_scout_sync(url: str, screenshot_dir: str) -> dict:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
         try:
-            page.goto(url, wait_until="networkidle", timeout=30000)
-            html = page.content()
+            # BUG FIX: Use domcontentloaded instead of networkidle for SPA portals
+            page.goto(url, wait_until="domcontentloaded", timeout=30000)
+            
+            # Wait for actual page content, not network idle
+            try:
+                page.wait_for_selector("body", timeout=10000)
+                # Give JS frameworks time to hydrate
+                page.wait_for_timeout(2000)
+            except Exception:
+                pass  # Continue anyway, body selector should always exist
+            
+            # Get page content with retry for SPA hydration
+            html = ""
+            for attempt in range(3):
+                html = page.content()
+                if html and len(html) > 500 and "<body" in html.lower():
+                    break
+                page.wait_for_timeout(1500)
+            
+            # Check for meaningful content (not just HTML shell)
+            if not html or len(html) < 500:
+                browser.close()
+                return {"error": f"Page returned empty content after 3 attempts: {url}", "html": "", "title": "", "screenshot_path": "", "url": url}
+            
+            if "<body" not in html.lower():
+                browser.close()
+                return {"error": f"Response is not valid HTML: {url}", "html": "", "title": "", "screenshot_path": "", "url": url}
+            
             title = page.title()
             
             # Check for forms
@@ -28,7 +54,7 @@ def _run_scout_sync(url: str, screenshot_dir: str) -> dict:
                 inputs = page.query_selector_all("input, select, textarea")
                 if not inputs:
                     browser.close()
-                    return {"error": "No form found on this page. Make sure the URL points directly to a form."}
+                    return {"error": "No form found on this page. Make sure the URL points directly to a form.", "html": html, "title": title, "screenshot_path": "", "url": url}
             
             # Take screenshot
             os.makedirs(screenshot_dir, exist_ok=True)

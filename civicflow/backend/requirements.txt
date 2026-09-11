@@ -14,11 +14,11 @@ aiohttp
 python-telegram-bot==21.5
 
 # ── AI / LLM ────────────────────────────────────────────────────
-google-generativeai
 langchain-core==0.1.52
 langchain==0.1.20
 langchain-community==0.0.38
 langgraph==0.0.43
+requests                    # For OpenRouter API calls
 
 # ── Automation ──────────────────────────────────────────────────
 playwright

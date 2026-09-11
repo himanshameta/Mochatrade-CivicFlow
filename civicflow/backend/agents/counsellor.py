@@ -1,15 +1,15 @@
 """
-CivicFlow — Counsellor Agent (Sahayak)
-======================================
-LLM-powered conversational agent guiding users through CivicFlow.
+CivicFlow — Counsellor Agent (Sahayak) - Simplified
+====================================================
+Rule-based conversational agent guiding users through CivicFlow.
+No LLM dependency - uses pattern matching and templates.
 """
 import os
 import sys
 import json
+import re
 from datetime import datetime
 from typing import Optional, List, Dict
-
-from google import genai
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -81,8 +81,7 @@ Otherwise, do not include the JSON block.
         stage: str
     ) -> CounsellorResponse:
         """
-        Process user message and return counsellor response.
-        Loads history from DB, calls Gemini, saves history.
+        Process user message using rule-based responses.
         """
         db = await get_db()
         
@@ -93,78 +92,56 @@ Otherwise, do not include the JSON block.
             if session:
                 history = session.get("conversation_history", [])
 
-        # 2. Build context
+        # 2. Get profile completion
         completion = await self._calculate_profile_completion(user_id)
-        sys_prompt = self._get_system_prompt(stage, completion)
         
-        # We declare tools manually to handle async execution cleanly
-        def get_profile_completion_status(uid: str) -> str:
-            """Gets the percentage of the profile completed."""
-            return f"Profile is {completion}% complete."
-
-        def get_missing_form_fields(sid: str) -> str:
-            """Gets a list of missing fields required for the current form."""
-            return "Missing fields lookup requires data_requirements from session."
-
-        def get_form_status(sid: str) -> str:
-            """Gets the current status of the form filling automation."""
-            return f"Status for session {sid}."
-
-        tools = [get_profile_completion_status, get_missing_form_fields, get_form_status]
-
-        client = genai.Client()
-        
-        # 3. Format history for Gemini
-        gemini_history = []
-        for msg in history:
-            role = "model" if msg["role"] == "assistant" else "user"
-            gemini_history.append({"role": role, "parts": [{"text": msg["message"]}]})
-
-        chat_session = client.chats.create(
-            model="gemini-2.0-flash-lite",
-            config=genai.types.GenerateContentConfig(
-                system_instruction=sys_prompt,
-                tools=tools
-            ),
-            history=gemini_history
-        )
-
-        # 4. Invoke LLM
-        response = chat_session.send_message(message)
-        
-        # Handle potential tool calls
-        if response.function_calls:
-            for fn in response.function_calls:
-                # Execute tool
-                if fn.name == "get_profile_completion_status":
-                    res = get_profile_completion_status(user_id)
-                elif fn.name == "get_missing_form_fields":
-                    res = get_missing_form_fields(session_id)
-                elif fn.name == "get_form_status":
-                    res = get_form_status(session_id)
-                else:
-                    res = "Unknown tool."
-                
-                response = chat_session.send_message(
-                    [{"function_response": {"name": fn.name, "response": {"result": res}}}]
-                )
-
-        final_text = response.text.strip()
-        
-        # 5. Extract action if any
+        # 3. Pattern matching for responses
+        message_lower = message.lower().strip()
+        final_text = ""
         triggered_action = None
-        import re
-        json_match = re.search(r'```json\s*(\{.*?\})\s*```', final_text, re.DOTALL)
-        if json_match:
-            try:
-                action_data = json.loads(json_match.group(1))
-                triggered_action = action_data.get("triggered_action")
-                # Remove the JSON block from the user-facing response
-                final_text = final_text[:json_match.start()].strip()
-            except Exception:
-                pass
+        
+        # Greetings
+        if any(word in message_lower for word in ['hi', 'hello', 'hey', 'namaste']):
+            final_text = f"Namaste! I'm Sahayak, your CivicFlow assistant. Your profile is {completion}% complete. How can I help you today?"
+        
+        # Profile queries
+        elif any(word in message_lower for word in ['profile', 'complete', 'status', 'progress']):
+            if completion < 50:
+                final_text = f"Your profile is {completion}% complete. Let me help you finish it. Please share your basic details like name, date of birth, and address."
+            else:
+                final_text = f"Great! Your profile is {completion}% complete. You're ready to start filling forms."
+        
+        # Document upload
+        elif any(word in message_lower for word in ['document', 'upload', 'aadhaar', 'pan', 'passport']):
+            final_text = "Please use the document upload button to share your documents. I'll extract the information automatically and keep it encrypted for your safety."
+        
+        # Form filling
+        elif any(word in message_lower for word in ['fill', 'form', 'start', 'begin', 'apply']):
+            if completion < 30:
+                final_text = "Before we start filling forms, let's complete your profile first. Please upload your documents or fill in the profile section."
+            else:
+                final_text = "I can help you fill government forms automatically. Which form do you need? For example: Passport, PAN Card, Driving License, or Aadhaar."
+                triggered_action = "start_form_fill"
+        
+        # Help/guidance
+        elif any(word in message_lower for word in ['help', 'how', 'what', 'guide']):
+            final_text = """I can help you with:
+1. Complete your profile automatically from documents
+2. Fill government forms without manual typing
+3. Track your application status
+4. Answer questions about required documents
 
-        # 6. Save back to DB
+What would you like to do?"""
+        
+        # Thanks/bye
+        elif any(word in message_lower for word in ['thanks', 'thank you', 'bye', 'goodbye']):
+            final_text = "You're welcome! Feel free to ask if you need any help with your forms. Jai Hind!"
+        
+        # Default fallback
+        else:
+            final_text = "I'm here to help you with government forms. You can ask me to:\n- Check your profile status\n- Upload documents\n- Fill a specific form\n- Get help with the process\n\nWhat would you like to do?"
+        
+        # 4. Save to DB
         if db is not None:
             now = datetime.utcnow()
             new_msgs = [
@@ -203,19 +180,9 @@ Otherwise, do not include the JSON block.
 
     async def explain_conflict(self, field: str, doc1_value: str, doc2_value: str) -> str:
         """
-        Generate plain language explanation of a field conflict using the LLM.
+        Generate plain language explanation of a field conflict.
         """
-        prompt = f"""
-You are Sahayak. Explain to the user that there is a mismatch in their documents.
-Field: {field}
-Value 1: {doc1_value}
-Value 2: {doc2_value}
-
-Write a short, polite, 1-2 sentence explanation asking them to clarify which one is correct.
-        """
-        client = genai.Client()
-        res = client.models.generate_content(model="gemini-2.0-flash-lite", contents=prompt)
-        return res.text.strip()
+        return f"I noticed a mismatch in your {field}. One document shows '{doc1_value}' and another shows '{doc2_value}'. Which one is correct?"
 
     async def get_stage_greeting(self, stage: str, user_name: str) -> str:
         """Return contextual greeting when entering a new stage."""

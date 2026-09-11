@@ -24,13 +24,17 @@ from agents.notifier import notify
 # Define the state structure
 class PipelineState(TypedDict):
     session_id: str
+    user_id: Optional[str]
     url: str
     html: Optional[str]
     page_title: Optional[str]
     screenshot_path: Optional[str]
     scraped_form: Optional[dict]  # ScrapedForm as dict
     user_documents_text: dict  # filename -> OCR text
+    user_profile: dict  # Fetched from MongoDB
     data_requirements: list  # list of UserDataItem dicts
+    pre_filled_values: dict  # {field_name: value} from profile mapping
+    missing_fields: list  # [field_label] for required fields with no data
     generated_script: Optional[str]
     script_path: Optional[str]
     status: str
@@ -51,11 +55,19 @@ async def node_scout(state: PipelineState) -> PipelineState:
     result = await scout(state["url"])
     
     if result.get("error"):
-        print(f"[Pipeline] ✗ Scout failed: {result['error']}")
+        error_msg = result['error']
+        print(f"[Pipeline] ✗ Scout failed: {error_msg}")
+        
+        # Provide more helpful error messages
+        if "No form found" in error_msg:
+            error_msg = "This page doesn't contain any forms. Please provide a direct link to the form page (not a homepage or information page)."
+        elif "timeout" in error_msg.lower():
+            error_msg = "The page took too long to load. The server may be slow or unreachable."
+        
         return {
             **state,
             "status": "failed",
-            "error": result["error"],
+            "error": error_msg,
             "retry_count": 999
         }
     
@@ -64,8 +76,9 @@ async def node_scout(state: PipelineState) -> PipelineState:
     
     return {
         **state,
-        "html": html,                                    # ← must be the STRING, not the dict
+        "html": html,
         "page_title": result.get("title", ""),
+        "screenshot_path": result.get("screenshot_path"),
         "status": "scouted"
     }
 
@@ -76,7 +89,16 @@ async def node_scraper(state: PipelineState) -> PipelineState:
     print(f"\n[Pipeline] Node: Scraper - Extracting form fields")
     
     html = state.get("html", "")
-    print(f"[Scraper DEBUG] HTML received by scraper — length: {len(html)}, first 200 chars: {html[:200]}")
+    
+    if not html or len(html) < 100:
+        print("[Pipeline] ✗ Invalid HTML — stopping pipeline")
+        return {
+            **state,
+            "scraped_form": None,
+            "status": "failed",
+            "error": "Page loaded but no valid HTML content found. The page may require authentication or JavaScript.",
+            "retry_count": 999
+        }
     
     result = await scraper(html, state["url"])
     
@@ -87,72 +109,114 @@ async def node_scraper(state: PipelineState) -> PipelineState:
             "scraped_form": None,
             "status": "failed",
             "error": "Could not find any form fields on this page. Make sure the URL points directly to a page with a form.",
-            "retry_count": 999  # Prevent retry loop
+            "retry_count": 999
         }
     
-    print(f"[Pipeline] ✓ Scraper found {len(result.get('fields', []))} fields")
+    fields_count = len(result.get('fields', []))
+    if fields_count == 0:
+        print("[Pipeline] ✗ No fields found — stopping pipeline")
+        return {
+            **state,
+            "scraped_form": None,
+            "status": "failed",
+            "error": "Found form structure but no fillable fields detected.",
+            "retry_count": 999
+        }
     
-    # IMMEDIATELY save scraped_form to Redis so resume can use it
-    await session_store.update_field(state["session_id"], "scraped_form", result)
-    await session_store.update_field(state["session_id"], "html", state.get("html", ""))
-    await session_store.update_field(state["session_id"], "page_title", state.get("page_title", ""))
+    print(f"[Pipeline] ✓ Scraper found {fields_count} fields")
+    
+    session = await session_store.load(state["session_id"])
+    if session:
+        if isinstance(result, dict):
+            session.scraped_form = ScrapedForm.model_validate(result)
+        else:
+            session.scraped_form = result
+        session.html = state.get("html", "")
+        session.page_title = state.get("page_title", "")
+        await session_store.save(session)
+        print(f"[Scraper] Saved scraped_form to session: {state['session_id']}")
+    else:
+        print(f"[Scraper] Error: Could not load session {state['session_id']} to save scraped form")
     
     return {
         **state,
-        "scraped_form": result,  # This is now a dict — safe for LangGraph state
+        "scraped_form": result,
         "status": "scraped"
     }
 
 
 # Node 3: Analyst Agent
 async def node_analyst(state: PipelineState) -> PipelineState:
-    """Analyze form and determine required user data"""
+    """Analyze form and map user profile to fields"""
     print(f"\n[Pipeline] Node: Analyst - Analyzing form requirements")
     
     try:
-        # Reconstruct ScrapedForm from dict
-        scraped_form = ScrapedForm(**state["scraped_form"])
+        # Reload session fresh from store
+        session = await session_store.load(state["session_id"])
+        if session and session.scraped_form:
+            scraped_form = session.scraped_form
+            if isinstance(scraped_form, dict):
+                scraped_form = ScrapedForm.model_validate(scraped_form)
+        else:
+            # Fallback to state if session not found or scraped_form missing
+            scraped_form = state["scraped_form"]
+            if isinstance(scraped_form, dict):
+                scraped_form = ScrapedForm.model_validate(scraped_form)
         
-        # Call analyst
-        data_requirements = await analyst(scraped_form, state["user_documents_text"])
+        # Call analyst with new signature
+        data_requirements, pre_filled, missing = await analyst(scraped_form, state["user_profile"])
         
         # Convert to dicts for state
         state["data_requirements"] = [item.model_dump() for item in data_requirements]
-        state["status"] = "collecting"
+        state["pre_filled_values"] = pre_filled
+        state["missing_fields"] = missing
+        
+        # Always set to ready to allow pipeline to continue
+        # Frontend will show missing fields and user can fill them later
+        state["status"] = "ready"
+        
+        if missing:
+            print(f"[Pipeline] ⚠ {len(missing)} fields missing but continuing - user can fill them later")
+        else:
+            print(f"[Pipeline] ✓ All fields mapped from profile")
         
         # Save to session
         session = await session_store.load(state["session_id"])
         if session:
             session.data_requirements = data_requirements
-            session.status = "collecting"
+            session.pre_filled_values = pre_filled
+            session.missing_fields = missing
+            session.status = state["status"]
             await session_store.save(session)
+            print(f"[Analyst] Saved analyst results to session: {state['session_id']}")
         
-        filled = sum(1 for item in data_requirements if item.value is not None)
-        print(f"[Pipeline] ✓ Analyst complete - {filled}/{len(data_requirements)} fields auto-filled")
+        filled = len(pre_filled)
+        total = len(scraped_form.fields)
+        print(f"[Pipeline] ✓ Analyst complete - Mapped {filled}/{total} fields from user profile")
         
     except Exception as e:
         state["error"] = f"Analysis failed: {str(e)}"
         state["status"] = "failed"
         print(f"[Pipeline] ✗ Analyst failed: {e}")
+        import traceback
+        traceback.print_exc()
     
     return state
 
 
 # Node 4: Check Data Completeness
 async def node_check_completeness(state: PipelineState) -> PipelineState:
-    """Check if all required data has been collected"""
+    """Check if all required data has been collected - but allow continuing regardless."""
     print(f"\n[Pipeline] Node: Check Completeness")
     
-    # Reconstruct UserDataItem objects
-    data_requirements = [UserDataItem(**item) for item in state["data_requirements"]]
+    # Always proceed to scriptgen - missing fields will be left blank or use defaults
+    state["status"] = "ready"
+    missing_count = len(state.get("missing_fields", []))
     
-    if is_data_complete(data_requirements):
-        state["status"] = "ready"
-        print(f"[Pipeline] ✓ All data collected - ready for script generation")
+    if missing_count > 0:
+        print(f"[Pipeline] ⚠ {missing_count} fields have no data - will proceed with available data")
     else:
-        state["status"] = "collecting"
-        missing = sum(1 for item in data_requirements if item.value is None)
-        print(f"[Pipeline] ○ Waiting for user input - {missing} fields missing")
+        print(f"[Pipeline] ✓ All data available")
     
     # Update session
     await session_store.update_status(state["session_id"], state["status"])
@@ -162,11 +226,8 @@ async def node_check_completeness(state: PipelineState) -> PipelineState:
 
 # Conditional routing after completeness check
 def route_after_completeness(state: PipelineState) -> str:
-    """Route based on data completeness"""
-    if state["status"] == "ready":
-        return "scriptgen"
-    else:
-        return "waiting_for_user"
+    """Always proceed to scriptgen - user can fill missing fields later if needed."""
+    return "scriptgen"
 
 
 # Node 5: ScriptGen Agent
@@ -207,7 +268,7 @@ async def node_scriptgen(state: PipelineState) -> PipelineState:
             "retry_count": 999
         }
     
-    # Deserialize data_requirements safely
+    # Deserialize data_requirements safely (kept for backward compatibility)
     raw_reqs = state.get("data_requirements", [])
     data_requirements = []
     for item in raw_reqs:
@@ -219,9 +280,12 @@ async def node_scriptgen(state: PipelineState) -> PipelineState:
         except Exception:
             pass
     
-    # Now run actual scriptgen
+    # Get pre_filled_values from state (this is what executor will use)
+    pre_filled_values = state.get("pre_filled_values", {})
+    
+    # Now run actual scriptgen with pre_filled_values
     try:
-        script = await scriptgen(scraped_form, data_requirements, state["session_id"])
+        script = await scriptgen(scraped_form, state["session_id"], pre_filled_values)
         
         # Determine script path
         upload_dir = os.getenv("UPLOAD_DIR", "./uploads")
@@ -233,7 +297,7 @@ async def node_scriptgen(state: PipelineState) -> PipelineState:
             "generated_script": script,
             "script_path": str(script_path),
             "status": "script_ready",
-            "retry_count": state.get("retry_count", 0)  # Don't change retry count on success
+            "retry_count": state.get("retry_count", 0)
         }
     except Exception as e:
         print(f"[Pipeline] ✗ ScriptGen failed with exception: {e}")
@@ -380,17 +444,7 @@ def build_graph():
         }
     )
     
-    workflow.add_edge("analyst", "check_completeness")
-    
-    # Conditional edge after completeness check
-    workflow.add_conditional_edges(
-        "check_completeness",
-        route_after_completeness,
-        {
-            "scriptgen": "scriptgen",
-            "waiting_for_user": END
-        }
-    )
+    workflow.add_edge("analyst", "scriptgen")  # Skip completeness check, always proceed
     
     workflow.add_edge("scriptgen", "executor")
     
@@ -414,14 +468,15 @@ def build_graph():
 compiled_graph = build_graph()
 
 
-async def run_pipeline(session_id: str, url: str, user_documents_text: dict = None) -> UserSession:
+async def run_pipeline(session_id: str, url: str, user_id: Optional[str] = None, user_documents_text: dict = None) -> UserSession:
     """
     Run the complete pipeline from URL to automation.
     
     Args:
         session_id: Unique session identifier
         url: Target form URL
-        user_documents_text: Dict of filename -> OCR extracted text
+        user_id: User ID to fetch profile for
+        user_documents_text: Dict of filename -> OCR extracted text (optional)
         
     Returns:
         Updated UserSession
@@ -429,27 +484,50 @@ async def run_pipeline(session_id: str, url: str, user_documents_text: dict = No
     print(f"\n{'=' * 80}")
     print(f"Starting CivicFlow Pipeline")
     print(f"Session ID: {session_id}")
+    print(f"User ID: {user_id}")
     print(f"URL: {url}")
     print(f"{'=' * 80}")
     
-    # Create initial session
-    session = UserSession(
-        session_id=session_id,
-        url=url,
-        status="created"
-    )
-    await session_store.save(session)
+    # STEP 1: Fetch user profile FIRST from DB (before analyzing form)
+    user_profile = {}
+    if user_id:
+        from utils.generic_mapper import get_flat_user_profile
+        try:
+            user_profile = await get_flat_user_profile(user_id)
+            print(f"[Pipeline] Loaded user profile from DB: {len(user_profile)} fields")
+            for key, val in list(user_profile.items())[:5]:  # Show first 5
+                print(f"  - {key}: {val}")
+        except Exception as e:
+            print(f"[Pipeline] Could not load user profile: {e}")
+    else:
+        print(f"[Pipeline] No user_id provided, skipping profile fetch")
+    
+    # Create initial session with user profile
+    session = await session_store.load(session_id)
+    if not session:
+        session = UserSession(
+            session_id=session_id,
+            user_id=user_id,
+            url=url,
+            status="created",
+            user_profile=user_profile
+        )
+        await session_store.save(session)
     
     # Initialize state
     initial_state: PipelineState = {
         "session_id": session_id,
+        "user_id": user_id,
         "url": url,
         "html": None,
         "page_title": None,
         "screenshot_path": None,
         "scraped_form": None,
         "user_documents_text": user_documents_text or {},
+        "user_profile": user_profile,  # Pass stored profile to pipeline
         "data_requirements": [],
+        "pre_filled_values": {},
+        "missing_fields": [],
         "generated_script": None,
         "script_path": None,
         "status": "created",
@@ -462,7 +540,7 @@ async def run_pipeline(session_id: str, url: str, user_documents_text: dict = No
     try:
         final_state = await compiled_graph.ainvoke(
             initial_state,
-            config={"recursion_limit": 20}  # Low limit = fail fast, not infinite loop
+            config={"recursion_limit": 20}
         )
         
         print(f"\n{'=' * 80}")
@@ -553,16 +631,20 @@ async def resume_pipeline(
         # Reconstruct state from session with ALL required data
         state: PipelineState = {
             "session_id": session.session_id,
+            "user_id": session_dict.get("user_id"),
             "url": session.url,
             "html": session_dict.get("html", ""),
             "page_title": session_dict.get("page_title", ""),
             "screenshot_path": None,
-            "scraped_form": scraped_form_data,  # ← CRITICAL: restore this
+            "scraped_form": scraped_form_data,
             "user_documents_text": session_dict.get("user_documents_text", {}),
+            "user_profile": session_dict.get("user_profile", {}),
             "data_requirements": [item.model_dump() if hasattr(item, 'model_dump') else item for item in session.data_requirements],
+            "pre_filled_values": session_dict.get("pre_filled_values", {}),
+            "missing_fields": session_dict.get("missing_fields", []),
             "generated_script": session.generated_script,
             "script_path": session_dict.get("script_path"),
-            "status": "ready",  # Force status to trigger scriptgen
+            "status": "ready",
             "error": None,
             "pause_context": None,
             "retry_count": 0

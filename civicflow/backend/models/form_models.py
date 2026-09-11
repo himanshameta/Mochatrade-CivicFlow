@@ -1,21 +1,54 @@
 from datetime import datetime
-from typing import List, Literal, Optional
-from pydantic import BaseModel, Field
+from typing import List, Literal, Optional, Union
+from pydantic import BaseModel, Field, field_validator
 from uuid import uuid4
+
+
+class FieldOption(BaseModel):
+    """Structured option for select/radio fields"""
+    value: str
+    label: str
 
 
 class FormField(BaseModel):
     field_id: str = Field(default_factory=lambda: str(uuid4()))
     label: str
-    field_type: Literal["text", "email", "tel", "date", "number", "select", 
-                        "radio", "checkbox", "file", "textarea", "password"]
+    field_type: str = "text"  # Support any HTML input type, normalized in scraper
     name: str
     id_attr: str = ""
     placeholder: str = ""
     required: bool = False
-    options: list[str] = Field(default_factory=list)
+    options: Union[List[str], List[FieldOption], List[dict]] = Field(default_factory=list)
     selector: str
+    selector_priority: list[str] = Field(default_factory=list)  # Multiple selector strategies
     section: str = ""
+    
+    @field_validator('options', mode='before')
+    @classmethod
+    def normalize_options(cls, v):
+        """Normalize options to support both string and dict formats"""
+        if not v:
+            return []
+        
+        normalized = []
+        for opt in v:
+            if isinstance(opt, str):
+                # Backward compatibility: string options
+                normalized.append({"value": opt, "label": opt})
+            elif isinstance(opt, dict):
+                # New format: dict with value and label
+                if 'value' in opt and 'label' in opt:
+                    normalized.append(opt)
+                elif 'value' in opt:
+                    normalized.append({"value": opt['value'], "label": opt['value']})
+                else:
+                    # Fallback for malformed dicts
+                    normalized.append({"value": str(opt), "label": str(opt)})
+            else:
+                # Fallback for unexpected types
+                normalized.append({"value": str(opt), "label": str(opt)})
+        
+        return normalized
 
 
 class ScrapedForm(BaseModel):
@@ -28,6 +61,7 @@ class ScrapedForm(BaseModel):
     has_file_upload: bool
     captcha_type: Optional[Literal["recaptcha", "hcaptcha", "image", "math", "unknown"]] = None
     scraped_at: datetime = Field(default_factory=datetime.utcnow)
+    scrape_warning: Optional[str] = None  # Warning messages, e.g. "No fillable fields found"
     # --- form_templates collection extensions (Phase 2) ---
     llm_found: bool = False                                      # True if URL was found by LLM search
     source: Literal["llm_search", "user_provided"] = "user_provided"  # how the URL was obtained
@@ -55,10 +89,13 @@ class UserSession(BaseModel):
     user_documents_text: dict[str, str] = Field(default_factory=dict)
     data_requirements: list[UserDataItem] = Field(default_factory=list)
     user_documents: list[str] = Field(default_factory=list)
+    user_profile: dict = Field(default_factory=dict)  # Flattened profile from DB
+    pre_filled_values: dict = Field(default_factory=dict)  # {field_name: value}
+    missing_fields: list = Field(default_factory=list)  # [field_label] for required missing fields
     generated_script: Optional[str] = None
     script_path: Optional[str] = None
-    status: Literal["created", "scraped", "collecting", "ready", "running",
-                    "paused_captcha", "paused_otp", "paused_payment",
+    status: Literal["created", "scraped", "collecting", "needs_user_input", "awaiting_confirmation",
+                    "confirmed", "ready", "running", "paused_captcha", "paused_otp", "paused_payment",
                     "completed", "failed"] = "created"
     pause_reason: Optional[str] = None
     pause_screenshot: Optional[str] = None

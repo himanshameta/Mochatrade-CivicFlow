@@ -513,24 +513,377 @@ const App = (() => {
     const url = document.getElementById('directUrl').value.trim();
     if (!url) { toast('Please enter a URL', 'warning'); return; }
 
-    showLoading('Verifying URL...');
+    console.log('[VerifyURL] Starting verification for:', url);
+    showLoading('Verifying URL and checking for forms...');
+    
     try {
       const res = await api('/search/verify', 'POST', { url });
-      const row  = document.getElementById('urlVerifyRow');
+      console.log('[VerifyURL] Response:', res);
+      
+      const data = res.data || res;
+      const row = document.getElementById('urlVerifyRow');
       const badge = document.getElementById('urlVerifyBadge');
       row.style.display = 'flex';
-      if (res.data.valid && res.data.is_government) {
-        badge.className = 'verify-badge valid';
-        badge.textContent = `✓ Valid government domain (${res.data.domain})`;
-        // Auto proceed to scrape
-        setTimeout(() => startScraping(url), 1000);
-      } else {
+      
+      // Check if page is reachable
+      if (!data.reachable) {
         badge.className = 'verify-badge invalid';
-        badge.textContent = res.data.is_government ? '⚠ Unreachable' : '⚠ Not an official government domain';
+        badge.textContent = '⚠ The page could not be reached';
+        hideLoading();
+        return;
       }
+      
+      // Check if page has a form
+      if (!data.has_form) {
+        badge.className = 'verify-badge invalid';
+        badge.textContent = `⚠ No fillable form found on this page (${data.message || 'No fields detected'})`;
+        hideLoading();
+        return;
+      }
+      
+      // Success - show verification badge
+      const domainType = data.is_government_domain ? 'Government site' : 'External website';
+      badge.className = 'verify-badge valid';
+      badge.textContent = `✓ Form detected (${data.field_count} fields) • ${domainType}`;
+      
+      console.log('[VerifyURL] Form detected, starting pipeline...');
+      toast(`Form found with ${data.field_count} fields`, 'success');
+      
+      // Immediately start the pipeline
+      setTimeout(() => startPipeline(url), 1000);
+      
     } catch(err) {
-      toast(err.message, 'error');
-    } finally {
+      console.error('[VerifyURL] Error:', err);
+      const badge = document.getElementById('urlVerifyBadge');
+      const row = document.getElementById('urlVerifyRow');
+      row.style.display = 'flex';
+      badge.className = 'verify-badge invalid';
+      badge.textContent = `✗ Error: ${err.message}`;
+      hideLoading();
+    }
+  }
+
+  async function startPipeline(url) {
+    console.log('[StartPipeline] Starting for URL:', url);
+    showLoading('Starting form automation pipeline...');
+    
+    try {
+      const res = await api('/start', 'POST', { url });
+      console.log('[StartPipeline] Response:', res);
+      
+      const data = res.data || res;
+      _sessionId = data.session_id || res.session_id;
+      
+      if (!_sessionId) {
+        throw new Error('No session ID received from server');
+      }
+      
+      console.log('[StartPipeline] Session created:', _sessionId);
+      toast('Pipeline started! Analyzing form...', 'success');
+      
+      // Navigate to session view with polling
+      navigate('session', { id: _sessionId });
+      hideLoading();
+      
+      // Start polling for status
+      startSessionPolling(_sessionId);
+      
+    } catch(err) {
+      console.error('[StartPipeline] Error:', err);
+      toast('Failed to start pipeline: ' + err.message, 'error');
+      hideLoading();
+    }
+  }
+
+  let _pollInterval = null;
+  
+  function startSessionPolling(sessionId) {
+    console.log('[Polling] Starting for session:', sessionId);
+    
+    // Clear any existing poll
+    if (_pollInterval) {
+      clearInterval(_pollInterval);
+    }
+    
+    // Poll every 2 seconds
+    _pollInterval = setInterval(async () => {
+      try {
+        const res = await api(`/sessions/${sessionId}`);
+        const session = res.data || res;
+        
+        console.log('[Polling] Session status:', session.status);
+        
+        // Update UI based on status
+        handleSessionStatus(session);
+        
+        // Stop polling on terminal states
+        if (['completed', 'failed', 'filled'].includes(session.status)) {
+          console.log('[Polling] Terminal state reached, stopping');
+          clearInterval(_pollInterval);
+          _pollInterval = null;
+        }
+        
+      } catch(err) {
+        console.error('[Polling] Error:', err);
+      }
+    }, 2000);
+  }
+  
+  function stopSessionPolling() {
+    if (_pollInterval) {
+      clearInterval(_pollInterval);
+      _pollInterval = null;
+      console.log('[Polling] Stopped');
+    }
+  }
+  
+  function handleSessionStatus(session) {
+    const status = session.status;
+    const card = document.getElementById('sessionDetailCard');
+    
+    if (!card) return; // Not on session detail page
+    
+    // Update status display
+    let statusHtml = `
+      <div class="form-row">
+        <div><div class="ef-label">Status</div><span class="status-badge ${status}">${status}</span></div>
+        <div><div class="ef-label">Updated</div><div>${new Date(session.updated_at).toLocaleString()}</div></div>
+      </div>
+      <div style="margin-top:1.5rem">
+        <div class="ef-label">Portal URL</div>
+        <a href="${session.url}" target="_blank" style="color:var(--sage-300)">${session.url}</a>
+      </div>
+    `;
+    
+    // Add status-specific UI
+    if (status === 'needs_user_input' && session.missing_fields && session.missing_fields.length > 0) {
+      statusHtml += `
+        <div style="margin-top:1.5rem;padding:1rem;background:var(--glass-bg);border-radius:0.5rem;border:1px solid var(--amber-500)">
+          <h4 style="color:var(--amber-300);margin:0 0 1rem 0">⚠ Missing Information</h4>
+          <form id="missingFieldsForm" onsubmit="App.submitMissingFields(event, '${session.session_id}')">
+            ${session.missing_fields.map(field => `
+              <div class="form-group">
+                <label>${field.label || field.key}</label>
+                <input type="${field.field_type === 'email' ? 'email' : field.field_type === 'tel' ? 'tel' : field.field_type === 'date' ? 'date' : 'text'}" 
+                       name="${field.key}" 
+                       placeholder="Enter ${field.label || field.key}" 
+                       required>
+              </div>
+            `).join('')}
+            <button type="submit" class="btn btn-primary">Submit & Continue</button>
+          </form>
+        </div>
+      `;
+    } else if (status === 'ready' || status === 'ready_to_fill' || status === 'script_ready') {
+      statusHtml += `
+        <div style="margin-top:1.5rem">
+          <p style="color:var(--sage-300)">Form analyzed! Review data before autofill.</p>
+          <button class="btn btn-primary" onclick="App.showConfirmationScreen('${session.session_id}')">Review & Confirm Data</button>
+        </div>
+      `;
+    } else if (status === 'confirmed') {
+      statusHtml += `
+        <div style="margin-top:1.5rem;padding:1rem;background:var(--glass-bg);border-radius:0.5rem;border:1px solid var(--sage-500)">
+          <h4 style="color:var(--sage-300);margin:0 0 0.5rem 0">✓ Data Confirmed</h4>
+          <p style="color:var(--text-muted);margin-bottom:1rem">Ready to start autofill.</p>
+          <button class="btn btn-primary" onclick="App.executeAutofill('${session.session_id}')">Start Autofill</button>
+        </div>
+      `;
+    } else if (status === 'analyzing') {
+      statusHtml += `
+        <div style="margin-top:1.5rem">
+          <div class="spinner"></div>
+          <p style="color:var(--text-muted);margin-top:1rem">Analyzing form fields...</p>
+        </div>
+      `;
+    } else if (status === 'filling' || status === 'running') {
+      statusHtml += `
+        <div style="margin-top:1.5rem">
+          <div class="spinner"></div>
+          <p style="color:var(--sage-300);margin-top:1rem">Autofilling form...</p>
+        </div>
+      `;
+    } else if (status === 'captcha_required') {
+      statusHtml += `
+        <div style="margin-top:1.5rem;padding:1rem;background:var(--glass-bg);border-radius:0.5rem;border:1px solid var(--amber-500)">
+          <h4 style="color:var(--amber-300);margin:0 0 0.5rem 0">🤖 CAPTCHA Detected</h4>
+          <p style="color:var(--text-muted)">This form contains CAPTCHA. Please solve it manually or use a test-safe form.</p>
+        </div>
+      `;
+    } else if (status === 'filled' || status === 'completed') {
+      statusHtml += `
+        <div style="margin-top:1.5rem;padding:1rem;background:var(--glass-bg);border-radius:0.5rem;border:1px solid var(--sage-500)">
+          <h4 style="color:var(--sage-300);margin:0 0 0.5rem 0">✅ Form Filled Successfully</h4>
+          <p style="color:var(--text-muted)">The form has been auto-filled and is ready for review.</p>
+        </div>
+      `;
+    } else if (status === 'failed') {
+      statusHtml += `
+        <div style="margin-top:1.5rem;padding:1rem;background:var(--glass-bg);border-radius:0.5rem;border:1px solid var(--danger)">
+          <h4 style="color:var(--danger);margin:0 0 0.5rem 0">✗ Execution Failed</h4>
+          <p style="color:var(--text-muted)">${session.error || 'An error occurred'}</p>
+        </div>
+      `;
+    }
+    
+    card.innerHTML = statusHtml;
+  }
+  
+  async function submitMissingFields(e, sessionId) {
+    e.preventDefault();
+    const form = e.target;
+    const formData = new FormData(form);
+    const user_provided = {};
+    
+    for (let [key, value] of formData.entries()) {
+      user_provided[key] = value;
+    }
+    
+    console.log('[SubmitMissingFields] Submitting:', user_provided);
+    showLoading('Submitting missing fields...');
+    
+    try {
+      await api(`/sessions/${sessionId}/fill`, 'POST', { user_provided });
+      toast('Fields submitted! Continuing...', 'success');
+      hideLoading();
+      // Reload to show updated status
+      setTimeout(() => location.reload(), 500);
+    } catch(err) {
+      console.error('[SubmitMissingFields] Error:', err);
+      toast('Failed to submit: ' + err.message, 'error');
+      hideLoading();
+    }
+  }
+  
+  async function showConfirmationScreen(sessionId) {
+    console.log('[ShowConfirmation] Loading data for session:', sessionId);
+    showLoading('Loading your data...');
+    
+    try {
+      const res = await api(`/sessions/${sessionId}/confirm-data`);
+      const data = res.data || res;
+      
+      console.log('[ShowConfirmation] Data:', data);
+      
+      // Build confirmation form
+      const card = document.getElementById('sessionDetailCard');
+      let formHtml = `
+        <div style="margin-bottom:1.5rem">
+          <h3 style="color:var(--sage-300);margin:0 0 0.5rem 0">📋 Review Your Data</h3>
+          <p style="color:var(--text-muted);font-size:0.9rem">Please review and edit the information below before autofill.</p>
+        </div>
+        <form id="confirmDataForm" onsubmit="App.submitConfirmation(event, '${sessionId}')">
+      `;
+      
+      // Group fields by filled/empty
+      const filledFields = data.form_fields.filter(f => f.value);
+      const emptyFields = data.form_fields.filter(f => !f.value && f.required);
+      const optionalEmpty = data.form_fields.filter(f => !f.value && !f.required);
+      
+      if (filledFields.length > 0) {
+        formHtml += `<h4 style="color:var(--sage-300);margin:1.5rem 0 0.75rem 0">✓ Auto-filled Fields</h4>`;
+        filledFields.forEach(field => {
+          formHtml += `
+            <div class="form-group">
+              <label>${field.label}</label>
+              <input type="${field.field_type === 'email' ? 'email' : field.field_type === 'tel' ? 'tel' : field.field_type === 'date' ? 'date' : 'text'}" 
+                     name="${field.name}" 
+                     value="${field.value}" 
+                     placeholder="${field.label}" 
+                     ${field.required ? 'required' : ''}>
+            </div>
+          `;
+        });
+      }
+      
+      if (emptyFields.length > 0) {
+        formHtml += `<h4 style="color:var(--amber-300);margin:1.5rem 0 0.75rem 0">⚠ Required Fields (Please Fill)</h4>`;
+        emptyFields.forEach(field => {
+          formHtml += `
+            <div class="form-group">
+              <label>${field.label} *</label>
+              <input type="${field.field_type === 'email' ? 'email' : field.field_type === 'tel' ? 'tel' : field.field_type === 'date' ? 'date' : 'text'}" 
+                     name="${field.name}" 
+                     value="${field.value || ''}" 
+                     placeholder="Enter ${field.label}" 
+                     required>
+            </div>
+          `;
+        });
+      }
+      
+      if (optionalEmpty.length > 0) {
+        formHtml += `<h4 style="color:var(--text-muted);margin:1.5rem 0 0.75rem 0">Optional Fields</h4>`;
+        optionalEmpty.forEach(field => {
+          formHtml += `
+            <div class="form-group">
+              <label>${field.label} (optional)</label>
+              <input type="${field.field_type === 'email' ? 'email' : field.field_type === 'tel' ? 'tel' : field.field_type === 'date' ? 'date' : 'text'}" 
+                     name="${field.name}" 
+                     value="${field.value || ''}" 
+                     placeholder="${field.label}">
+            </div>
+          `;
+        });
+      }
+      
+      formHtml += `
+          <div style="margin-top:2rem;display:flex;gap:1rem">
+            <button type="submit" class="btn btn-primary" style="flex:1">Confirm & Proceed to Autofill</button>
+            <button type="button" class="btn" onclick="location.reload()" style="flex:0 0 auto">Cancel</button>
+          </div>
+        </form>
+      `;
+      
+      card.innerHTML = formHtml;
+      hideLoading();
+      
+    } catch(err) {
+      console.error('[ShowConfirmation] Error:', err);
+      toast('Failed to load data: ' + err.message, 'error');
+      hideLoading();
+    }
+  }
+  
+  async function submitConfirmation(e, sessionId) {
+    e.preventDefault();
+    const form = e.target;
+    const formData = new FormData(form);
+    const confirmed_data = {};
+    
+    for (let [key, value] of formData.entries()) {
+      if (value) confirmed_data[key] = value;
+    }
+    
+    console.log('[SubmitConfirmation] Confirming data:', confirmed_data);
+    showLoading('Confirming data...');
+    
+    try {
+      await api(`/sessions/${sessionId}/confirm`, 'POST', { confirmed_data });
+      toast('Data confirmed! Ready to autofill.', 'success');
+      hideLoading();
+      
+      // Reload session status to show confirmed state
+      setTimeout(() => location.reload(), 500);
+      
+    } catch(err) {
+      console.error('[SubmitConfirmation] Error:', err);
+      toast('Failed to confirm: ' + err.message, 'error');
+      hideLoading();
+    }
+  }
+  
+  async function executeAutofill(sessionId) {
+    console.log('[ExecuteAutofill] Starting for session:', sessionId);
+    showLoading('Starting autofill...');
+    
+    try {
+      await api(`/sessions/${sessionId}/execute`, 'POST');
+      toast('Autofill started!', 'success');
+      hideLoading();
+    } catch(err) {
+      console.error('[ExecuteAutofill] Error:', err);
+      toast('Failed to start autofill: ' + err.message, 'error');
       hideLoading();
     }
   }
@@ -809,11 +1162,24 @@ const App = (() => {
 
   // ── Session Detail ─────────────────────────────
   async function onSessionDetail(id) {
+    console.log('[SessionDetail] Loading session:', id);
+    _sessionId = id; // Store current session ID
     document.getElementById('detailSessionId').textContent = id;
+    
+    // Stop any previous polling
+    stopSessionPolling();
+    
     try {
       const res = await api(`/sessions/${id}`);
-      renderSessionDetail(res.data || res);
+      const session = res.data || res;
+      console.log('[SessionDetail] Loaded:', session);
+      handleSessionStatus(session);
+      
+      // Start polling for this session
+      startSessionPolling(id);
+      
     } catch(err) {
+      console.error('[SessionDetail] Error:', err);
       document.getElementById('sessionDetailCard').innerHTML =
         `<p style="color:var(--danger)">${err.message}</p>`;
     }
@@ -993,6 +1359,10 @@ const App = (() => {
     submitCorrection,
     sendCounsellorMessage,
     toggleFloatCounsellor,
+    submitMissingFields,
+    executeAutofill,
+    showConfirmationScreen,
+    submitConfirmation,
   };
 })();
 

@@ -1,0 +1,21 @@
+# OCR Service Dependencies (Isolated from main backend)
+# ========================================================
+
+# Core framework
+fastapi==0.115.0
+uvicorn==0.32.0
+python-multipart==0.0.12
+
+# OCR Engine (CPU-only)
+paddleocr==2.7.3
+paddlepaddle==2.6.2  # CPU version
+
+# Image processing
+Pillow==10.3.0
+numpy==1.24.3
+
+# PDF processing (optional but recommended)
+pdf2image==1.17.0
+
+# File type detection
+python-magic-bin==0.4.14  # Windows-compatible version
