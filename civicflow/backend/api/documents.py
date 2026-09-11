@@ -526,7 +526,10 @@ async def vault_upload(
         source=DocumentSource.MANUAL_UPLOAD,
     )
 
-    await vault_create(doc)
+    created_doc = await vault_create(doc)
+    if not created_doc:
+        raise HTTPException(status_code=500, detail="Failed to persist document metadata")
+
     
     # Run OCR and extract data synchronously so we can return it to the frontend dialog
     extracted_fields = {}
