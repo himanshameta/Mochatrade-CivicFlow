@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="https://raw.githubusercontent.com/team-tensors/civicflow/main/assets/logo.png" alt="CivicFlow Logo" width="120" onerror="this.style.display='none'">
+ 
   <h1>CivicFlow</h1>
   <p><strong>Private AI-Assisted Form Automation</strong></p>
   <p><em>Built by <b>Team Tensors</b> for the <b>Faraway Hackathon 2026</b></em></p>
