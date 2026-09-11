@@ -510,11 +510,6 @@ code,
   letter-spacing: 0.05em;
 }
 
-.form-group label .required-star {
-  color: var(--danger);
-  margin-left: 0.2rem;
-}
-
 input[type="text"],
 input[type="email"],
 input[type="password"],
@@ -808,19 +803,6 @@ textarea {
     border: 2px solid var(--border);
     margin: 2rem auto;
   }
-}
-
-.auth-form-title {
-  font-family: var(--font-heading);
-  font-size: 1.4rem;
-  font-weight: 700;
-  margin-bottom: 0.35rem;
-}
-
-.auth-form-subtitle {
-  color: var(--text-secondary);
-  font-size: 0.88rem;
-  margin-bottom: 2rem;
 }
 
 .auth-tabs {
@@ -1385,12 +1367,6 @@ textarea {
   box-shadow: var(--pop-shadow);
 }
 
-.empty-icon {
-  font-size: 3rem;
-  margin-bottom: 0.75rem;
-  opacity: 0.5;
-}
-
 /* ── Form Search ───────────────────────────────────────────────── */
 .search-mode-toggle {
   display: flex;
@@ -1632,20 +1608,11 @@ textarea {
   margin-top: 0.5rem;
 }
 
-/* Review actions */
 .review-actions {
   display: flex;
   gap: 1rem;
   margin-top: 2rem;
   justify-content: flex-end;
-  flex-wrap: wrap;
-}
-
-.form-actions {
-  display: flex;
-  gap: 1rem;
-  justify-content: flex-end;
-  flex-wrap: wrap;
 }
 
 /* ── Execution View ────────────────────────────────────────────── */
@@ -1725,7 +1692,6 @@ textarea {
   box-shadow: var(--pop-shadow);
 }
 
-/* OTP input */
 .otp-row {
   display: flex;
   gap: 0.75rem;
@@ -2015,7 +1981,6 @@ textarea {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  box-shadow: var(--glow-sm);
 }
 
 .btn-send:hover {

@@ -4,6 +4,88 @@ from pydantic import BaseModel, Field, field_validator
 from uuid import uuid4
 
 
+# ===========================================================================
+# Enhanced Form Search Models - Strict Multi-Source Classification
+# ===========================================================================
+
+class URLClassification(BaseModel):
+    """Result of URL classification with evidence"""
+    url: str
+    source_category: Literal["official_portal", "youtube", "third_party_web", "internal_cache"]
+    page_type: Literal["direct_form", "official_guidance", "document_checklist", "faq", 
+                       "login_gateway", "dashboard_or_portal_home", "youtube_video", 
+                       "article_or_blog", "news", "unknown"]
+    official_domain: bool
+    automatable: bool
+    confidence: float = Field(ge=0.0, le=1.0)
+    evidence: List[str] = Field(default_factory=list)
+    normalized_title: str = ""
+    relevance_reason: str = ""
+
+class YouTubeVideoResult(BaseModel):
+    """YouTube video with optional transcript analysis"""
+    url: str
+    video_id: str
+    title: str
+    channel: str = ""
+    duration: Optional[str] = None
+    transcript_available: bool = False
+    transcript_source: Optional[str] = None
+    transcript_text: Optional[str] = None
+    transcript_summary: Optional[str] = None
+    key_steps: List[str] = Field(default_factory=list)
+    mentioned_documents: List[str] = Field(default_factory=list)
+    mentioned_warnings: List[str] = Field(default_factory=list)
+    confidence: float = Field(ge=0.0, le=1.0, default=0.7)
+
+class DirectFormResult(BaseModel):
+    """Best direct form candidate"""
+    url: str
+    title: str
+    display_title: str = ""  # Clean user-facing title
+    display_reason: str = ""  # User-facing explanation
+    confidence: float = Field(ge=0.0, le=1.0)
+    automatable: bool
+    evidence: List[str] = Field(default_factory=list)  # Internal only
+    form_indicators: List[str] = Field(default_factory=list)
+
+class GuidanceSource(BaseModel):
+    """Official guidance or support page"""
+    url: str
+    title: str
+    display_title: str = ""  # Clean user-facing title
+    display_reason: str = ""  # User-facing explanation
+    page_type: Literal["official_guidance", "document_checklist", "faq"]
+    official_domain: bool
+    summary: str = ""
+    confidence: float = Field(ge=0.0, le=1.0)
+
+class ProcessInsights(BaseModel):
+    """Unified guidance from all sources"""
+    summary: str
+    likely_eligibility: List[str] = Field(default_factory=list)
+    likely_required_documents: List[str] = Field(default_factory=list)
+    likely_steps: List[str] = Field(default_factory=list)
+    likely_portal_flow: List[str] = Field(default_factory=list)
+    likely_blockers: List[str] = Field(default_factory=list)
+    tips_before_starting: List[str] = Field(default_factory=list)
+    automation_readiness: str = "unknown"
+    confidence_notes: List[str] = Field(default_factory=list)
+    sources: List[str] = Field(default_factory=list)
+
+class EnhancedFormSearchResult(BaseModel):
+    """Structured multi-source search result"""
+    query: str
+    direct_form: Optional[DirectFormResult] = None
+    official_guidance: List[GuidanceSource] = Field(default_factory=list)
+    document_checklists: List[GuidanceSource] = Field(default_factory=list)
+    youtube_videos: List[YouTubeVideoResult] = Field(default_factory=list)
+    insights: ProcessInsights
+    debug: dict = Field(default_factory=dict)
+    valid: bool = True
+    error_message: Optional[str] = None
+
+
 class FieldOption(BaseModel):
     """Structured option for select/radio fields"""
     value: str
@@ -140,15 +222,70 @@ def safe_parse_scraped_form(data) -> Optional[ScrapedForm]:
 # Form Search Models
 # ===========================================================================
 
-class FormSearchOption(BaseModel):
+from enum import Enum
+from typing import List, Literal, Optional, Union, Dict, Any
+
+class PageType(str, Enum):
+    direct_form = "direct_form"
+    official_guidance = "official_guidance"
+    document_checklist = "document_checklist"
+    faq = "faq"
+    login_gateway = "login_gateway"
+    dashboard_or_portal_home = "dashboard_or_portal_home"
+    youtube_video = "youtube_video"
+    article_or_blog = "article_or_blog"
+    news = "news"
+    unknown = "unknown"
+
+class SourceCategory(str, Enum):
+    official_portal = "official_portal"
+    youtube = "youtube"
+    third_party_web = "third_party_web"
+    internal_cache = "internal_cache"
+
+class ClassifiedURL(BaseModel):
     url: str
-    portal_name: str
+    title: str = "Unknown"
+    source_category: SourceCategory
+    page_type: PageType
+    official_domain: bool
+    automatable: bool
     confidence: float
+    evidence: List[str] = Field(default_factory=list)
+    normalized_title: str = ""
+
+class DirectFormCandidate(BaseModel):
+    url: str
+    title: str
+    confidence: float
+    automatable: bool
+    evidence: List[str] = Field(default_factory=list)
+
+class YouTubeVideoNode(BaseModel):
+    url: str
+    title: str
+    channel: str = ""
+    transcript_available: bool = False
+    transcript_summary: str = ""
+    key_steps: List[str] = Field(default_factory=list)
+    mentioned_documents: List[str] = Field(default_factory=list)
+
+class ProcessInsightsNode(BaseModel):
+    summary: str = ""
+    likely_required_documents: List[str] = Field(default_factory=list)
+    likely_steps: List[str] = Field(default_factory=list)
+    likely_blockers: List[str] = Field(default_factory=list)
+    automation_readiness: str = ""
     notes: str = ""
 
-class FormSearchResult(BaseModel):
-    options: List[FormSearchOption]
-    is_user_provided: bool = False
+class FormSearchResultV2(BaseModel):
+    query: str
+    direct_form: Optional[DirectFormCandidate] = None
+    official_guidance: List[ClassifiedURL] = Field(default_factory=list)
+    document_checklists: List[ClassifiedURL] = Field(default_factory=list)
+    youtube_videos: List[YouTubeVideoNode] = Field(default_factory=list)
+    insights: ProcessInsightsNode = Field(default_factory=ProcessInsightsNode)
+    debug: Dict[str, Any] = Field(default_factory=dict)
     valid: bool = True
     error_message: Optional[str] = None
 

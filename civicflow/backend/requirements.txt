@@ -52,9 +52,13 @@ python-magic-bin==0.4.14     # Use -bin on Windows to avoid libmagic dll errors
 rapidfuzz==3.6.1             # Fast Levenshtein distance for cross-validation
 cryptography                 # AES-256 encryption
 
+# ── YouTube Enhancement ──────────────────────────────────────────
+youtube-transcript-api      # For video transcript retrieval
+
 # ── Phase 4 (uncomment when ready) ─────────────────────────────
 # python-telegram-bot
 # slowapi                   # Rate limiting
 
 # ── Mock Portal ──────────────────────────────────────────────────
 Flask
+duckduckgo-search

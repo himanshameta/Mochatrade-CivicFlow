@@ -7,7 +7,9 @@
 /* This file contains only supplemental/page-specific additions.   */
 
 /* ── Dynamic Review Form: section wrappers ─────────────────────── */
-.dynamic-form { width: 100%; }
+.dynamic-form {
+  width: 100%;
+}
 
 .dynamic-section {
   margin-bottom: 2rem;
@@ -29,6 +31,7 @@
   position: sticky;
   top: 80px;
 }
+
 .profile-sidebar-card h4 {
   font-family: var(--font-heading);
   font-size: 0.9rem;
@@ -155,6 +158,11 @@
   box-shadow: var(--pop-shadow-hover);
 }
 
+.document-card:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: var(--pop-shadow-hover);
+}
+
 .doc-picker-empty {
   text-align: center;
 }
@@ -180,7 +188,11 @@
 }
 
 /* ── File Upload Modal ─────────────────────────────────────────── */
-.file-upload-modal-body { display: flex; flex-direction: column; gap: 1rem; }
+.file-upload-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
 
 .upload-progress {
   height: 4px;
@@ -189,6 +201,7 @@
   overflow: hidden;
   margin-top: 0.5rem;
 }
+
 .upload-progress-fill {
   height: 100%;
   background: linear-gradient(90deg, var(--accent-hover), var(--accent));
@@ -361,5 +374,7 @@
 
 /* ── Responsive overrides ──────────────────────────────────────── */
 @media (max-width: 768px) {
-  .profile-sidebar-card { position: static; }
+  .profile-sidebar-card {
+    position: static;
+  }
 }
