@@ -158,6 +158,11 @@
   box-shadow: var(--pop-shadow-hover);
 }
 
+.document-card:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: var(--pop-shadow-hover);
+}
+
 .doc-picker-empty {
   text-align: center;
 }
