@@ -148,6 +148,15 @@ class MongoSessionStore:
 
 
 
+_global_in_memory_session_store: Optional[InMemorySessionStore] = None
+
+def get_shared_in_memory_session_store() -> InMemorySessionStore:
+    global _global_in_memory_session_store
+    if _global_in_memory_session_store is None:
+        _global_in_memory_session_store = InMemorySessionStore()
+    return _global_in_memory_session_store
+
+
 class SessionStore:
     """Auto-selects backend: MongoDB → Redis → InMemory."""
 
@@ -181,10 +190,10 @@ class SessionStore:
         if self._use_mongo and self._mongo:
             return self._mongo
 
-        # Priority 2: Redis
+        # Priority 2: Redis / Shared InMemory Fallback
         if self._use_fallback:
             if self._fallback is None:
-                self._fallback = InMemorySessionStore()
+                self._fallback = get_shared_in_memory_session_store()
             return self._fallback
         
         if self.redis is None:
@@ -196,9 +205,9 @@ class SessionStore:
                 print("[SessionStore] [OK] Connected to Redis")
             except Exception as e:
                 print(f"[SessionStore] [ERROR] Redis connection failed: {e}")
-                print("[SessionStore] -> Falling back to in-memory storage")
+                print("[SessionStore] -> Falling back to shared in-memory storage")
                 self._use_fallback = True
-                self._fallback = InMemorySessionStore()
+                self._fallback = get_shared_in_memory_session_store()
                 return self._fallback
         return self.redis
     

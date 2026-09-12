@@ -4,7 +4,19 @@ import axios from 'axios'
 import { ArrowRight, Lock } from 'lucide-react'
 
 const ProfileSetup = ({ user, showToast }) => {
-  const [profile, setProfile] = useState({})
+  const [profile, setProfile] = useState({
+    first_name: '',
+    last_name: '',
+    dob: '',
+    gender: '',
+    phone: '',
+    address: '',
+    city: '',
+    state: '',
+    pincode: '',
+    aadhaar_number: '',
+    pan_number: '',
+  })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const navigate = useNavigate()
@@ -15,24 +27,60 @@ const ProfileSetup = ({ user, showToast }) => {
 
   const loadProfile = async () => {
     try {
-      const response = await axios.get('/auth/me')
-      setProfile(response.data.data.profile || {})
+      const response = await axios.get('/auth/profile')
+      if (response.data && response.data.data && response.data.data.profile) {
+        const fetched = response.data.data.profile
+        setProfile(prev => ({ ...prev, ...fetched }))
+      }
     } catch (error) {
+      console.error('Failed to load profile:', error)
       showToast('Failed to load profile', 'error')
     } finally {
       setLoading(false)
     }
   }
 
+  const handleChange = (field, value) => {
+    setProfile(prev => ({ ...prev, [field]: value }))
+  }
+
   const handleSave = async (e) => {
     e.preventDefault()
     setSaving(true)
+
+    const payload = {
+      basic_info: {
+        first_name: profile.first_name || '',
+        last_name: profile.last_name || '',
+        dob: profile.dob || '',
+        gender: profile.gender || '',
+      },
+      contact: {
+        phone: profile.phone || '',
+        address: profile.address || '',
+        city: profile.city || '',
+        state: profile.state || '',
+        pincode: profile.pincode || '',
+      },
+      identity: {
+        aadhaar_number: profile.aadhaar_number || profile.aadhaar || '',
+        pan_number: profile.pan_number || profile.pan || '',
+      }
+    }
+
     try {
-      // Minimal implementation for hackathon — assume there's an update endpoint or it's handled via doc vault
-      showToast('Profile updated securely', 'success')
-      navigate('/dashboard')
+      const res = await axios.post('/auth/profile', payload)
+      if (res.data && res.data.success) {
+        showToast('Profile updated securely', 'success')
+        navigate('/dashboard')
+      } else {
+        showToast(res.data?.message || 'Failed to save profile', 'error')
+      }
     } catch (error) {
-      showToast('Failed to save profile', 'error')
+      console.error('Save profile error:', error)
+      const errDetail = error.response?.data?.detail
+      const msg = typeof errDetail === 'string' ? errDetail : errDetail?.message || error.message || 'Failed to save profile'
+      showToast(msg, 'error')
     } finally {
       setSaving(false)
     }
@@ -64,19 +112,40 @@ const ProfileSetup = ({ user, showToast }) => {
               <div className="form-grid">
                 <div className="form-group">
                   <label htmlFor="firstName">First Name</label>
-                  <input type="text" id="firstName" defaultValue={profile.first_name || ''} placeholder="John" />
+                  <input
+                    type="text"
+                    id="firstName"
+                    value={profile.first_name || ''}
+                    onChange={(e) => handleChange('first_name', e.target.value)}
+                    placeholder="John"
+                  />
                 </div>
                 <div className="form-group">
                   <label htmlFor="lastName">Last Name</label>
-                  <input type="text" id="lastName" defaultValue={profile.last_name || ''} placeholder="Doe" />
+                  <input
+                    type="text"
+                    id="lastName"
+                    value={profile.last_name || ''}
+                    onChange={(e) => handleChange('last_name', e.target.value)}
+                    placeholder="Doe"
+                  />
                 </div>
                 <div className="form-group">
                   <label htmlFor="dob">Date of Birth</label>
-                  <input type="date" id="dob" defaultValue={profile.dob || ''} />
+                  <input
+                    type="date"
+                    id="dob"
+                    value={profile.dob || ''}
+                    onChange={(e) => handleChange('dob', e.target.value)}
+                  />
                 </div>
                 <div className="form-group">
                   <label htmlFor="gender">Gender</label>
-                  <select id="gender" defaultValue={profile.gender || ''}>
+                  <select
+                    id="gender"
+                    value={profile.gender || ''}
+                    onChange={(e) => handleChange('gender', e.target.value)}
+                  >
                     <option value="">Select...</option>
                     <option value="male">Male</option>
                     <option value="female">Female</option>
@@ -94,27 +163,54 @@ const ProfileSetup = ({ user, showToast }) => {
               <div className="form-grid">
                 <div className="form-group">
                   <label htmlFor="email">Email</label>
-                  <input type="email" id="email" defaultValue={user?.email || ''} disabled />
+                  <input type="email" id="email" value={user?.email || ''} disabled />
                 </div>
                 <div className="form-group">
                   <label htmlFor="phone">Phone Number</label>
-                  <input type="tel" id="phone" defaultValue={profile.phone || ''} placeholder="10-digit mobile" />
+                  <input
+                    type="tel"
+                    id="phone"
+                    value={profile.phone || ''}
+                    onChange={(e) => handleChange('phone', e.target.value)}
+                    placeholder="10-digit mobile"
+                  />
                 </div>
                 <div className="form-group full-width">
                   <label htmlFor="address">Full Residential Address</label>
-                  <textarea id="address" defaultValue={profile.address || ''} placeholder="Flat/House No., Street, Area..." rows={3}></textarea>
+                  <textarea
+                    id="address"
+                    value={profile.address || ''}
+                    onChange={(e) => handleChange('address', e.target.value)}
+                    placeholder="Flat/House No., Street, Area..."
+                    rows={3}
+                  ></textarea>
                 </div>
                 <div className="form-group">
                   <label htmlFor="city">City</label>
-                  <input type="text" id="city" defaultValue={profile.city || ''} />
+                  <input
+                    type="text"
+                    id="city"
+                    value={profile.city || ''}
+                    onChange={(e) => handleChange('city', e.target.value)}
+                  />
                 </div>
                 <div className="form-group">
                   <label htmlFor="state">State</label>
-                  <input type="text" id="state" defaultValue={profile.state || ''} />
+                  <input
+                    type="text"
+                    id="state"
+                    value={profile.state || ''}
+                    onChange={(e) => handleChange('state', e.target.value)}
+                  />
                 </div>
                 <div className="form-group">
                   <label htmlFor="pincode">PIN Code</label>
-                  <input type="text" id="pincode" defaultValue={profile.pincode || ''} />
+                  <input
+                    type="text"
+                    id="pincode"
+                    value={profile.pincode || ''}
+                    onChange={(e) => handleChange('pincode', e.target.value)}
+                  />
                 </div>
               </div>
             </div>
@@ -130,11 +226,23 @@ const ProfileSetup = ({ user, showToast }) => {
               <div className="form-grid">
                 <div className="form-group">
                   <label htmlFor="aadhaar">Aadhaar Number <span className="field-sensitive-tag"><Lock size={12} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '2px' }} /> Encrypted</span></label>
-                  <input type="password" id="aadhaar" defaultValue={profile.aadhaar || ''} placeholder="XXXX XXXX XXXX" />
+                  <input
+                    type="password"
+                    id="aadhaar"
+                    value={profile.aadhaar_number || profile.aadhaar || ''}
+                    onChange={(e) => handleChange('aadhaar_number', e.target.value)}
+                    placeholder="XXXX XXXX XXXX"
+                  />
                 </div>
                 <div className="form-group">
                   <label htmlFor="pan">PAN Number <span className="field-sensitive-tag"><Lock size={12} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '2px' }} /> Encrypted</span></label>
-                  <input type="password" id="pan" defaultValue={profile.pan || ''} placeholder="ABCDE1234F" />
+                  <input
+                    type="password"
+                    id="pan"
+                    value={profile.pan_number || profile.pan || ''}
+                    onChange={(e) => handleChange('pan_number', e.target.value)}
+                    placeholder="ABCDE1234F"
+                  />
                 </div>
               </div>
             </div>

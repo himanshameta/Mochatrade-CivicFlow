@@ -345,7 +345,11 @@ async def get_flat_user_profile(user_id: str) -> Dict:
 
         db = await get_db()
         if db is None:
-            return {}
+            try:
+                from api.auth import get_memory_profile
+                return await get_memory_profile(user_id)
+            except Exception:
+                return {}
 
         profile_doc = await db.user_profiles.find_one({"user_id": user_id})
 

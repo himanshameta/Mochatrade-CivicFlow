@@ -35,6 +35,21 @@ router = APIRouter(prefix="/auth", tags=["Auth"])
 
 # In-memory fallback if Mongo is not configured
 _memory_users: dict = {}
+_memory_profiles: dict = {}
+
+async def get_memory_profile(user_id: str) -> dict:
+    """Return flattened/canonical profile dictionary for user_id in local fallback mode."""
+    p_data = _memory_profiles.get(user_id)
+    if not p_data:
+        return {}
+    flat = {}
+    if isinstance(p_data, dict):
+        for sec in ["basic_info", "contact", "identity", "education"]:
+            sec_dict = p_data.get(sec, {})
+            if isinstance(sec_dict, dict):
+                flat.update(sec_dict)
+    from utils.generic_mapper import normalize_profile_data
+    return normalize_profile_data(flat)
 
 async def _save_user(user: UserDB) -> None:
     user.updated_at = datetime.utcnow()
@@ -224,6 +239,37 @@ async def get_relatives(payload: dict = Depends(require_auth)):
     return ok("Success", data={"relatives": relatives})
 
 
+@router.get("/profile", summary="Get user profile")
+async def get_profile(payload: dict = Depends(require_auth)):
+    """Retrieve current user profile data."""
+    user_id = payload["sub"]
+    profile_data = {}
+    try:
+        from db.mongo import get_db
+        db = await get_db()
+        if db is not None:
+            profile_doc = await db.user_profiles.find_one({"user_id": user_id})
+            if profile_doc:
+                profile_doc.pop("_id", None)
+                from utils.encryption import decrypt_profile
+                profile_data = decrypt_profile(profile_doc, user_id)
+        else:
+            profile_data = _memory_profiles.get(user_id, {})
+    except Exception as e:
+        print(f"[Auth API] GET /auth/profile DB error: {e}")
+        profile_data = _memory_profiles.get(user_id, {})
+
+    # Build flat representation for UI convenience
+    flat_profile = {}
+    if isinstance(profile_data, dict):
+        for section in ["basic_info", "contact", "identity", "education"]:
+            sec_dict = profile_data.get(section, {})
+            if isinstance(sec_dict, dict):
+                flat_profile.update(sec_dict)
+    
+    return ok("Success", data={"user_id": user_id, "profile": flat_profile, "structured_profile": profile_data})
+
+
 @router.post("/profile", summary="Update user profile")
 async def update_profile(request: dict, payload: dict = Depends(require_auth)):
     """
@@ -252,11 +298,7 @@ async def update_profile(request: dict, payload: dict = Depends(require_auth)):
         from utils.encryption import encrypt_profile
 
         db = await get_db()
-        if db is None:
-            raise HTTPException(
-                status_code=503,
-                detail="Database unavailable"
-            )
+        using_memory = (db is None)
 
         # ── Step 1: Normalize frontend keys to canonical backend keys ──
         normalized, normalize_errors = normalize_profile_update_payload(request)
@@ -269,17 +311,27 @@ async def update_profile(request: dict, payload: dict = Depends(require_auth)):
             print(f"[Auth API] Normalization warnings: {normalize_errors}")
 
         # ── Step 2: Load or create profile ──
-        profile_doc = await db.user_profiles.find_one({"user_id": user_id})
-
-        if profile_doc:
-            profile_doc.pop("_id", None)
-            try:
-                profile_data = UserProfileData(**profile_doc)
-            except Exception as e:
-                print(f"[Auth API] Failed to parse existing profile, creating new: {e}")
+        profile_data = None
+        if not using_memory:
+            profile_doc = await db.user_profiles.find_one({"user_id": user_id})
+            if profile_doc:
+                profile_doc.pop("_id", None)
+                try:
+                    profile_data = UserProfileData(**profile_doc)
+                except Exception as e:
+                    print(f"[Auth API] Failed to parse existing profile, creating new: {e}")
+                    profile_data = UserProfileData(user_id=user_id)
+            else:
                 profile_data = UserProfileData(user_id=user_id)
         else:
-            profile_data = UserProfileData(user_id=user_id)
+            existing_mem = _memory_profiles.get(user_id)
+            if existing_mem and isinstance(existing_mem, dict):
+                try:
+                    profile_data = UserProfileData(**existing_mem)
+                except Exception as e:
+                    profile_data = UserProfileData(user_id=user_id)
+            else:
+                profile_data = UserProfileData(user_id=user_id)
 
         # ── Step 3: Safe merge — only set keys that exist in the model ──
         validation_errors = []
@@ -333,15 +385,18 @@ async def update_profile(request: dict, payload: dict = Depends(require_auth)):
         profile_data.updated_at = datetime.utcnow()
 
         profile_dict = profile_data.model_dump()
-        encrypted_dict = encrypt_profile(profile_dict, user_id)
-
-        await db.user_profiles.update_one(
-            {"user_id": user_id},
-            {"$set": encrypted_dict},
-            upsert=True
-        )
-
-        print(f"[Auth API] Profile saved: {len(fields_written)} fields, {len(validation_errors)} errors")
+        
+        if not using_memory:
+            encrypted_dict = encrypt_profile(profile_dict, user_id)
+            await db.user_profiles.update_one(
+                {"user_id": user_id},
+                {"$set": encrypted_dict},
+                upsert=True
+            )
+            print(f"[Auth API] Profile saved to MongoDB: {len(fields_written)} fields")
+        else:
+            _memory_profiles[user_id] = profile_dict
+            print(f"[Auth API] Profile saved to Memory: {len(fields_written)} fields for user_id={user_id}")
 
         # ── Step 5: Return result ──
         response = {
