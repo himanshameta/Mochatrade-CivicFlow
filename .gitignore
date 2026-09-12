@@ -126,3 +126,7 @@ react-app/coverage
 .vite/
 react-app/.vite/
 
+
+# CivicFlow runtime/generated data
+civicflow/backend/uploads/
+uploads/
