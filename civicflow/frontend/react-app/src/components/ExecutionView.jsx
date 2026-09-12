@@ -16,6 +16,7 @@ const ExecutionView = ({ showToast }) => {
   const [filledCount, setFilledCount] = useState(0)
   const [totalFields, setTotalFields] = useState(0)
   const [submittingResume, setSubmittingResume] = useState(false)
+  const [applicationId, setApplicationId] = useState(null)
 
   const pollInterval = useRef(null)
   const wsRef = useRef(null)
@@ -111,8 +112,12 @@ const ExecutionView = ({ showToast }) => {
           } else if (msg.event === 'submitting' || msg.event === 'submission') {
             setStatus('submitting')
             addEvent({ timestamp, icon: '🚀', text: msg.message || 'Submitting form...', type: 'submit' })
+          } else if (msg.event === 'captcha_completed') {
+            setStatus('running')
+            addEvent({ timestamp, icon: '✓', text: 'Human verification completed in browser — resuming automation...', type: 'completed' })
           } else if (msg.event === 'submission_complete') {
             setStatus('completed')
+            if (msg.application_id) setApplicationId(msg.application_id)
             addEvent({ timestamp, icon: '✓', text: msg.message || 'Form submitted and verified successfully', type: 'completed' })
           } else if (msg.event === 'interrupted') {
             setStatus('interrupted')
@@ -466,12 +471,17 @@ const ExecutionView = ({ showToast }) => {
         {status === 'completed' && (
           <div className="exec-completed-panel" style={{ marginTop: '1.5rem' }}>
             <div style={{ fontSize: '3rem', marginBottom: '0.5rem' }}>
-              <CheckCircle2 size={56} style={{ color: 'var(--quaternary)', margin: '0 auto' }} />
+              <CheckCircle2 size={56} style={{ color: '#10b981', margin: '0 auto' }} />
             </div>
-            <h3>Form Submitted Successfully!</h3>
-            <p style={{ marginTop: '0.35rem', marginBottom: '1.5rem' }}>
-              {totalFields > 0 ? `All ${totalFields} fields were filled and submitted without errors.` : 'All form fields were filled and submitted.'}
+            <h3 style={{ textTransform: 'uppercase', letterSpacing: '0.05em', color: '#065f46', fontSize: '1.4rem' }}>✅ APPLICATION SUBMITTED</h3>
+            <p style={{ marginTop: '0.35rem', marginBottom: '1rem', color: '#475569' }}>
+              Application successfully submitted.
             </p>
+            {applicationId && (
+              <div style={{ marginBottom: '1.5rem', padding: '0.75rem 1rem', background: '#ecfdf5', border: '2px dashed #6ee7b7', borderRadius: '8px', color: '#065f46', fontFamily: 'monospace', fontSize: '1.1rem', fontWeight: 'bold' }}>
+                Application ID: {applicationId}
+              </div>
+            )}
             <button onClick={() => navigate('/dashboard')} className="btn btn-primary btn-full">
               Return to Dashboard
             </button>

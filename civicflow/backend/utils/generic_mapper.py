@@ -457,10 +457,22 @@ def compute_missing_required_fields(scraped_form: Dict, pre_filled_values: Dict)
     
     for field in fields:
         field_dict = field if isinstance(field, dict) else getattr(field, 'model_dump', lambda: {})()
-        ftype = field_dict.get('field_type', 'text')
+        ftype = (field_dict.get('field_type') or 'text').lower()
+        fname = (field_dict.get('name') or field_dict.get('id_attr') or field_dict.get('field_id') or '').lower()
         lbl = (field_dict.get('label') or '').lower()
-        key = (field_dict.get('name') or field_dict.get('field_id') or '').lower()
-        is_captcha = field_dict.get('is_captcha') or ('captcha' in lbl) or ('robot' in lbl) or (key == 'captcha_verified')
+        stable_key = compute_stable_field_key(field_dict)
+        is_captcha = (
+            field_dict.get('is_captcha') or 
+            ftype in ('captcha', 'recaptcha') or 
+            'captcha' in fname or 
+            'recaptcha' in fname or 
+            'captcha' in lbl or 
+            'robot' in lbl or 
+            'security check' in lbl or
+            'captcha' in stable_key.lower() or
+            'recaptcha' in stable_key.lower()
+        )
+        print(f"[MissingCheck] key={repr(stable_key)} label={repr(field_dict.get('label'))} ftype={repr(ftype)} fname={repr(fname)} is_captcha={is_captcha}")
         
         # Skip file fields and CAPTCHA fields from text profile missing fields
         if ftype == 'file' or is_captcha:
@@ -487,9 +499,21 @@ def map_profile_to_fields(fields_list: List[Dict], profile: Dict) -> Tuple[Dict,
     missing_fields = []
     
     for field_dict in fields_list:
-        ftype = field_dict.get('field_type', 'text')
+        ftype = (field_dict.get('field_type') or 'text').lower()
+        fname = (field_dict.get('name') or field_dict.get('id_attr') or field_dict.get('field_id') or '').lower()
         lbl = (field_dict.get('label') or '').lower()
-        is_captcha = field_dict.get('is_captcha') or ('captcha' in lbl) or ('robot' in lbl)
+        stable_key = compute_stable_field_key(field_dict)
+        is_captcha = (
+            field_dict.get('is_captcha') or 
+            ftype in ('captcha', 'recaptcha') or 
+            'captcha' in fname or 
+            'recaptcha' in fname or 
+            'captcha' in lbl or 
+            'robot' in lbl or 
+            'security check' in lbl or
+            'captcha' in stable_key.lower() or
+            'recaptcha' in stable_key.lower()
+        )
         
         # Skip file fields and CAPTCHA fields from text profile missing fields
         if ftype == 'file' or is_captcha:

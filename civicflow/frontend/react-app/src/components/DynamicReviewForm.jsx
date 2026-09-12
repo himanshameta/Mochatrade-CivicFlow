@@ -28,7 +28,7 @@ const DynamicReviewForm = ({
   readyForExecution = false,
 }) => {
   const [localValues, setLocalValues] = useState({})
-  const [expandPrefilled, setExpandPrefilled] = useState(false)
+  const [expandPrefilled, setExpandPrefilled] = useState(editableRequired.length === 0)
   const [expandOptional, setExpandOptional] = useState(false)
   const firstRequiredRef = useRef(null)
 
@@ -37,6 +37,12 @@ const DynamicReviewForm = ({
     fields.forEach(f => { initial[f.key] = f.value || '' })
     setLocalValues(initial)
   }, [fields])
+
+  useEffect(() => {
+    if (editableRequired.length === 0 && canonicalFields.length > 0) {
+      setExpandPrefilled(true)
+    }
+  }, [editableRequired, canonicalFields])
 
   // Auto-scroll to first required field
   useEffect(() => {

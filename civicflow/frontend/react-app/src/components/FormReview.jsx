@@ -131,8 +131,22 @@ const FormReview = ({ showToast }) => {
       setSummary(data.summary || null)
       setBlockers(data.blockers || [])
       setWarnings(data.warnings || [])
-      setMissingFields(data.missing_required_fields || [])
-      setFileRequirements(data.file_requirements || [])
+      const fileReqs = data.file_requirements || []
+      setFileRequirements(fileReqs)
+
+      // Sync selectedDocs state from backend file_requirements
+      const initialSelectedDocs = {}
+      fileReqs.forEach(fr => {
+        if (fr.selected_document_id || fr.matched_document) {
+          initialSelectedDocs[fr.key] = {
+            document_id: fr.selected_document_id || fr.matched_document?.id,
+            display_name: fr.selected_document_filename || fr.matched_document?.original_filename || fr.matched_document?.display_name || 'Selected document'
+          }
+        }
+      })
+      if (Object.keys(initialSelectedDocs).length > 0) {
+        setSelectedDocs(prev => ({ ...initialSelectedDocs, ...prev }))
+      }
       setDebugPayload(null)
 
       if (data.status === 'error' || data.status === 'failed') {

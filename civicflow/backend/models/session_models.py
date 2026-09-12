@@ -149,6 +149,7 @@ class MongoSessionStore:
 
 
 _global_in_memory_session_store: Optional[InMemorySessionStore] = None
+_global_use_fallback: bool = False
 
 def get_shared_in_memory_session_store() -> InMemorySessionStore:
     global _global_in_memory_session_store
@@ -174,6 +175,7 @@ class SessionStore:
 
 
     async def _get_redis(self):
+        global _global_use_fallback
         # Priority 1: MongoDB (if configured)
         if self.mongo_uri and not self._use_mongo:
             try:
@@ -191,7 +193,8 @@ class SessionStore:
             return self._mongo
 
         # Priority 2: Redis / Shared InMemory Fallback
-        if self._use_fallback:
+        if self._use_fallback or _global_use_fallback:
+            self._use_fallback = True
             if self._fallback is None:
                 self._fallback = get_shared_in_memory_session_store()
             return self._fallback
@@ -206,6 +209,7 @@ class SessionStore:
             except Exception as e:
                 print(f"[SessionStore] [ERROR] Redis connection failed: {e}")
                 print("[SessionStore] -> Falling back to shared in-memory storage")
+                _global_use_fallback = True
                 self._use_fallback = True
                 self._fallback = get_shared_in_memory_session_store()
                 return self._fallback

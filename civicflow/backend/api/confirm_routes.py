@@ -113,7 +113,7 @@ async def get_confirmation_data(session_id: str):
             ftype = field.field_type
             lbl = (field.label or '').lower()
             key = (field.key or getattr(field, 'name', '') or '').lower()
-            is_captcha = getattr(field, 'is_captcha', False) or (key == 'captcha_verified') or ('captcha' in lbl) or ('robot' in lbl)
+            is_captcha = getattr(field, 'is_captcha', False) or (key == 'captcha_verified') or ('captcha' in lbl) or ('robot' in lbl) or ('captcha' in key) or ('recaptcha' in key)
 
             # Skip file fields and CAPTCHA fields from text profile missing/editable fields
             if ftype == 'file' or is_captcha:
@@ -248,19 +248,20 @@ async def confirm_data(session_id: str, request: ConfirmSubmitRequest):
                 if hasattr(session.scraped_form, "model_dump")
                 else session.scraped_form
             )
-            
-            for field in scraped_form_dict.get('fields', []):
-                if field.get('required', False):
-                    stable_key = compute_stable_field_key(field)
-                    if not session.pre_filled_values.get(stable_key):
-                        missing_required.append(stable_key)
+            from utils.generic_mapper import compute_missing_required_fields
+            print(f"[DEBUG CONFIRM] scraped_form_dict fields: {[f.get('name') for f in scraped_form_dict.get('fields', [])]}")
+            print(f"[DEBUG CONFIRM] session.pre_filled_values: {session.pre_filled_values}")
+            missing_items = compute_missing_required_fields(scraped_form_dict, session.pre_filled_values)
+            print(f"[DEBUG CONFIRM] missing_items: {missing_items}")
+            missing_required = [m["name"] for m in missing_items]
         
         session.missing_fields = [{"key": k} for k in missing_required]
         
         # Check file requirements too
         file_blockers = []
         for fr in (session.file_requirements or []):
-            if fr.get("required") and fr.get("status") != "selected":
+            has_doc = bool(fr.get("selected_document_id") or fr.get("matched_document") or fr.get("status") == "selected")
+            if fr.get("required") and not has_doc:
                 file_blockers.append(fr.get("label", fr.get("key")))
         
         # Update status

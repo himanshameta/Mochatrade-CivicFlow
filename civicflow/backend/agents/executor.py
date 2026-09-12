@@ -227,13 +227,26 @@ async def executor(script_path: str, session_id: str, session_store: SessionStor
                         await broadcast_event(session_id, {
                             "event": "status_changed",
                             "status": "paused_captcha",
-                            "message": "CAPTCHA detected — please solve it",
+                            "message": "CAPTCHA detected — please solve it in the browser",
                             "timestamp": datetime.now().isoformat()
                         })
                     except Exception:
                         pass
-                    return {"status": "paused_captcha", "message": "CAPTCHA detected — please solve it"}
-                
+
+                elif event_type == "captcha_completed":
+                    await session_store.update_status(session_id, "running")
+                    await session_store.update_field(session_id, "pause_reason", None)
+                    try:
+                        from api.websocket import broadcast_event
+                        await broadcast_event(session_id, {
+                            "event": "status_changed",
+                            "status": "running",
+                            "message": "Human verification completed — resuming automation...",
+                            "timestamp": datetime.now().isoformat()
+                        })
+                    except Exception:
+                        pass
+
                 elif event_type == "otp_detected":
                     await session_store.update_status(session_id, "paused_otp")
                     try:
@@ -253,22 +266,29 @@ async def executor(script_path: str, session_id: str, session_store: SessionStor
                 
                 elif event_type == "submission_complete":
                     now_dt = datetime.utcnow()
+                    app_id = event_data.strip() if event_data and (event_data.strip().startswith("CF-") or len(event_data.strip()) > 3) else None
                     await session_store.update_status(session_id, "completed")
                     await session_store.update_field(session_id, "submission_confirmed", True)
                     await session_store.update_field(session_id, "completed_at", now_dt)
+                    if app_id:
+                        await session_store.update_field(session_id, "application_id", app_id)
                     try:
                         from api.websocket import broadcast_event
                         await broadcast_event(session_id, {
                             "event": "status_changed",
                             "status": "completed",
                             "message": "Form submitted successfully!",
+                            "application_id": app_id,
                             "timestamp": datetime.now().isoformat()
                         })
                     except Exception:
                         pass
-                    return {"status": "completed", "message": "Form submitted successfully!"}
+                    return {"status": "completed", "message": "Form submitted successfully!", "application_id": app_id}
                 
                 elif event_type == "interrupted":
+                    curr_session = await session_store.load(session_id)
+                    if curr_session and (curr_session.status == "completed" or getattr(curr_session, "submission_confirmed", False)):
+                        return {"status": "completed", "message": "Form submitted successfully!"}
                     await session_store.update_status(session_id, "interrupted")
                     await session_store.update_field(session_id, "interruption_reason", "browser_closed")
                     try:
@@ -284,6 +304,9 @@ async def executor(script_path: str, session_id: str, session_store: SessionStor
                     return {"status": "interrupted", "message": "Browser window closed by user"}
                 
                 elif event_type == "error":
+                    curr_session = await session_store.load(session_id)
+                    if curr_session and (curr_session.status == "completed" or getattr(curr_session, "submission_confirmed", False)):
+                        return {"status": "completed", "message": "Form submitted successfully!"}
                     await session_store.update_status(session_id, "failed")
                     await session_store.update_field(session_id, "error", event_data)
                     try:
@@ -307,8 +330,8 @@ async def executor(script_path: str, session_id: str, session_store: SessionStor
             return_code = msg_data
             curr_session = await session_store.load(session_id)
             curr_status = curr_session.status if curr_session else "unknown"
-            if curr_status in ("completed", "interrupted", "paused_captcha", "paused_otp"):
-                return {"status": curr_status, "message": f"Execution finished with status {curr_status}"}
+            if curr_status in ("completed", "interrupted", "paused_captcha", "paused_otp") or (curr_session and getattr(curr_session, "submission_confirmed", False)):
+                return {"status": "completed" if (curr_status == "completed" or getattr(curr_session, "submission_confirmed", False)) else curr_status, "message": f"Execution finished with status {curr_status}"}
 
             if return_code == 0:
                 await session_store.update_status(session_id, "completed")
@@ -323,8 +346,8 @@ async def executor(script_path: str, session_id: str, session_store: SessionStor
         elif msg_type == "error":
             curr_session = await session_store.load(session_id)
             curr_status = curr_session.status if curr_session else "unknown"
-            if curr_status in ("completed", "interrupted", "paused_captcha", "paused_otp"):
-                return {"status": curr_status, "message": f"Execution finished with status {curr_status}"}
+            if curr_status in ("completed", "interrupted", "paused_captcha", "paused_otp") or (curr_session and getattr(curr_session, "submission_confirmed", False)):
+                return {"status": "completed" if (curr_status == "completed" or getattr(curr_session, "submission_confirmed", False)) else curr_status, "message": f"Execution finished with status {curr_status}"}
 
             err_msg = str(msg_data)
             await session_store.update_status(session_id, "failed")
@@ -333,8 +356,8 @@ async def executor(script_path: str, session_id: str, session_store: SessionStor
 
     curr_session = await session_store.load(session_id)
     curr_status = curr_session.status if curr_session else "unknown"
-    if curr_status in ("completed", "interrupted", "paused_captcha", "paused_otp"):
-        return {"status": curr_status, "message": f"Execution finished with status {curr_status}"}
+    if curr_status in ("completed", "interrupted", "paused_captcha", "paused_otp") or (curr_session and getattr(curr_session, "submission_confirmed", False)):
+        return {"status": "completed" if (curr_status == "completed" or getattr(curr_session, "submission_confirmed", False)) else curr_status, "message": f"Execution finished with status {curr_status}"}
 
     err_detail = "\n".join(stderr_lines) if stderr_lines else "Script ended without completion signal"
     await session_store.update_status(session_id, "failed")

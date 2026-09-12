@@ -547,40 +547,6 @@ TALENTBRIDGE_APPLICATION_FORM_HTML = """
             </div>
 
             <!-- Section 4: CAPTCHA Checkpoint -->
-            <div class="tb-form-section">
-                <h2 class="tb-section-title">
-                    <span class="tb-section-num">4</span>
-                    Security Verification
-                </h2>
-
-                <div class="tb-field">
-                    <label class="tb-label">
-                        Security Check <span class="required">*</span>
-                    </label>
-
-                    <div class="tb-captcha-wrapper">
-                        {% if recaptcha_site_key %}
-                        <!-- Real Google reCAPTCHA Integration Point -->
-                        <div class="g-recaptcha" data-sitekey="{{ recaptcha_site_key }}"></div>
-                        {% else %}
-                        <!-- Local Development reCAPTCHA Checkpoint Widget -->
-                        <div class="g-recaptcha tb-mock-captcha" id="recaptcha_checkpoint_container">
-                            <div class="tb-mock-captcha-check">
-                                <input type="checkbox" name="captcha_verified" id="captcha_checkbox" value="true" required>
-                                <label for="captcha_checkbox" class="tb-mock-captcha-text">I'm not a robot</label>
-                            </div>
-                            <div class="tb-mock-captcha-logo">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="#4285F4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-                                </svg>
-                                <span>reCAPTCHA</span>
-                            </div>
-                        </div>
-                        {% endif %}
-                    </div>
-                </div>
-            </div>
-
             <button type="submit" class="tb-submit-btn" id="submit_application_btn">
                 Submit Application
             </button>
@@ -668,19 +634,14 @@ SUBMITTED_APPLICATIONS = {}
 
 @talentbridge_bp.route('/', methods=['GET'])
 def application_form():
-    recaptcha_site_key = os.getenv("RECAPTCHA_SITE_KEY", "").strip()
     return render_template_string(
         TALENTBRIDGE_APPLICATION_FORM_HTML,
-        recaptcha_site_key=recaptcha_site_key,
         form_data={},
         error_msg=None
     )
 
 @talentbridge_bp.route('/apply', methods=['POST'])
 def submit_application():
-    recaptcha_site_key = os.getenv("RECAPTCHA_SITE_KEY", "").strip()
-    recaptcha_secret_key = os.getenv("RECAPTCHA_SECRET_KEY", "").strip()
-
     candidate_name = request.form.get('candidate_name', '').strip()
     contact_number = request.form.get('contact_number', '').strip()
     email_address = request.form.get('email_address', '').strip()
@@ -688,8 +649,6 @@ def submit_application():
     city = request.form.get('city', '').strip()
     state = request.form.get('state', '').strip()
     gender = request.form.get('gender', '').strip()
-    captcha_verified = request.form.get('captcha_verified')
-    g_recaptcha_response = request.form.get('g-recaptcha-response', '').strip()
 
     form_data = {
         'candidate_name': candidate_name,
@@ -714,7 +673,6 @@ def submit_application():
     if missing_fields:
         return render_template_string(
             TALENTBRIDGE_APPLICATION_FORM_HTML,
-            recaptcha_site_key=recaptcha_site_key,
             form_data=form_data,
             error_msg=f"Please fill in all required fields: {', '.join(missing_fields)}"
         ), 400
@@ -723,7 +681,6 @@ def submit_application():
     if 'resume' not in request.files:
         return render_template_string(
             TALENTBRIDGE_APPLICATION_FORM_HTML,
-            recaptcha_site_key=recaptcha_site_key,
             form_data=form_data,
             error_msg="Please upload a valid Resume / CV file."
         ), 400
@@ -732,53 +689,9 @@ def submit_application():
     if not resume_file or resume_file.filename == '':
         return render_template_string(
             TALENTBRIDGE_APPLICATION_FORM_HTML,
-            recaptcha_site_key=recaptcha_site_key,
             form_data=form_data,
             error_msg="Please select a Resume / CV file to attach."
         ), 400
-
-    # Validate CAPTCHA
-    if recaptcha_secret_key:
-        if not g_recaptcha_response:
-            return render_template_string(
-                TALENTBRIDGE_APPLICATION_FORM_HTML,
-                recaptcha_site_key=recaptcha_site_key,
-                form_data=form_data,
-                error_msg="CAPTCHA verification required. Please complete the reCAPTCHA."
-            ), 400
-
-        # Verify token with Google API
-        try:
-            post_data = urllib.parse.urlencode({
-                'secret': recaptcha_secret_key,
-                'response': g_recaptcha_response
-            }).encode('utf-8')
-            req = urllib.request.Request('https://www.google.com/recaptcha/api/siteverify', data=post_data)
-            with urllib.request.urlopen(req) as resp:
-                result = json.loads(resp.read().decode('utf-8'))
-                if not result.get('success'):
-                    return render_template_string(
-                        TALENTBRIDGE_APPLICATION_FORM_HTML,
-                        recaptcha_site_key=recaptcha_site_key,
-                        form_data=form_data,
-                        error_msg="reCAPTCHA verification failed. Please try again."
-                    ), 400
-        except Exception as e:
-            return render_template_string(
-                TALENTBRIDGE_APPLICATION_FORM_HTML,
-                recaptcha_site_key=recaptcha_site_key,
-                form_data=form_data,
-                error_msg=f"reCAPTCHA validation error: {str(e)}"
-            ), 400
-    else:
-        # Fallback local dev check
-        if not captcha_verified and not g_recaptcha_response:
-            return render_template_string(
-                TALENTBRIDGE_APPLICATION_FORM_HTML,
-                recaptcha_site_key=recaptcha_site_key,
-                form_data=form_data,
-                error_msg="Please check the security verification checkbox before submitting."
-            ), 400
 
     # Save Resume File safely
     raw_filename = resume_file.filename

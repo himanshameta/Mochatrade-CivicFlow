@@ -705,7 +705,7 @@ async def run_pipeline(session_id: str, url: str, user_id: Optional[str] = None,
     else:
         print(f"[Pipeline] No user_id provided, skipping profile fetch")
     
-    # Create initial session with user profile
+    # Create or update session with user profile
     session = await session_store.load(session_id)
     if not session:
         session = UserSession(
@@ -715,7 +715,11 @@ async def run_pipeline(session_id: str, url: str, user_id: Optional[str] = None,
             status="created",
             user_profile=user_profile
         )
-        await session_store.save(session)
+    else:
+        session.user_profile = user_profile
+        if user_id:
+            session.user_id = user_id
+    await session_store.save(session)
     
     # Initialize state
     initial_state: PipelineState = {

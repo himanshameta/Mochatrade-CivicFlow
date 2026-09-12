@@ -1097,19 +1097,34 @@ async def confirm_and_update_data(session_id: str, payload: dict):
             else session.scraped_form
         ) if session.scraped_form else {}
         
-        missing_required = compute_missing_required_fields(
+        print(f"[DEBUG ROUTES CONFIRM] scraped_form_dict fields: {[f.get('name') if isinstance(f, dict) else getattr(f, 'name', '') for f in scraped_form_dict_for_missing.get('fields', [])]}")
+        print(f"[DEBUG ROUTES CONFIRM] session.pre_filled_values: {session.pre_filled_values}")
+        missing_items = compute_missing_required_fields(
             scraped_form_dict_for_missing,
             session.pre_filled_values
         )
+        print(f"[DEBUG ROUTES CONFIRM] missing_items: {missing_items}")
+        missing_required = [m["name"] if isinstance(m, dict) else str(m) for m in missing_items]
         
-        session.missing_fields = missing_required
+        session.missing_fields = [{"key": k} for k in missing_required]
         
-        # Update status based on missing fields
-        # Rules: never return ready_for_execution=true with missing fields
-        if missing_required:
+        # Check file requirements
+        file_blockers = []
+        for fr in (session.file_requirements or []):
+            has_doc = bool(fr.get("selected_document_id") or fr.get("matched_document") or fr.get("status") == "selected")
+            if fr.get("required") and not has_doc:
+                file_blockers.append(fr.get("label", fr.get("key")))
+
+        # Update status based on missing fields and file blockers
+        if missing_required or file_blockers:
             session.status = "awaiting_confirmation"
             session.ready_for_execution = False
-            message = f"Some required fields are still missing ({len(missing_required)})"
+            parts = []
+            if missing_required:
+                parts.append(f"{len(missing_required)} required fields still missing")
+            if file_blockers:
+                parts.append(f"{len(file_blockers)} required files not selected")
+            message = "; ".join(parts)
             print(f"[Confirm] Status: awaiting_confirmation, ready_for_execution: False")
         else:
             session.status = "confirmed"
