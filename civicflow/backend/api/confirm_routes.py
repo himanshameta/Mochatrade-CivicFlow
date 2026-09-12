@@ -110,6 +110,15 @@ async def get_confirmation_data(session_id: str):
         editable_fields = []
         
         for field in review_fields:
+            ftype = field.field_type
+            lbl = (field.label or '').lower()
+            key = (field.key or getattr(field, 'name', '') or '').lower()
+            is_captcha = getattr(field, 'is_captcha', False) or (key == 'captcha_verified') or ('captcha' in lbl) or ('robot' in lbl)
+
+            # Skip file fields and CAPTCHA fields from text profile missing/editable fields
+            if ftype == 'file' or is_captcha:
+                continue
+
             if field.value:
                 pre_filled_values[field.key] = field.value
                 canonical_fields.append(field)
@@ -135,14 +144,16 @@ async def get_confirmation_data(session_id: str):
                     score=ms.get("score", 0.0),
                 ))
             
-            # Check if user already selected a document for this field
-            selected_id = None
+            # Check if document is selected (via session.selected_documents or selected_document_id)
+            selected_id = fr.get("selected_document_id")
             status = fr.get("status", "missing")
             if session.selected_documents:
                 sel = session.selected_documents.get(fr.get("key"))
                 if sel:
                     selected_id = sel[0] if isinstance(sel, list) else sel
                     status = "selected"
+            if selected_id and status in ["ready", "selected", "matched"]:
+                status = "selected"
             
             file_requirements.append(FileRequirementItem(
                 key=fr.get("key", ""),

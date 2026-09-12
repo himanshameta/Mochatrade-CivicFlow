@@ -683,6 +683,15 @@ async def get_confirmation_data(session_id: str):
                 'placeholder': field_dict.get('placeholder', ''),
             }
 
+            ftype = field_dict.get('field_type', 'text')
+            lbl = (improved_label or '').lower()
+            key = (field_dict.get('name') or stable_key).lower()
+            is_captcha = field_dict.get('is_captcha') or (key == 'captcha_verified') or ('captcha' in lbl) or ('robot' in lbl)
+
+            # Skip file fields and CAPTCHA fields from text profile missing/editable fields
+            if ftype == 'file' or is_captcha:
+                continue
+
             if final_value:
                 canonical_fields.append(field_item)
                 pre_filled_values[stable_key] = final_value

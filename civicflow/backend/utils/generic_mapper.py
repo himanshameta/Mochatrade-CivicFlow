@@ -457,7 +457,15 @@ def compute_missing_required_fields(scraped_form: Dict, pre_filled_values: Dict)
     
     for field in fields:
         field_dict = field if isinstance(field, dict) else getattr(field, 'model_dump', lambda: {})()
+        ftype = field_dict.get('field_type', 'text')
+        lbl = (field_dict.get('label') or '').lower()
+        key = (field_dict.get('name') or field_dict.get('field_id') or '').lower()
+        is_captcha = field_dict.get('is_captcha') or ('captcha' in lbl) or ('robot' in lbl) or (key == 'captcha_verified')
         
+        # Skip file fields and CAPTCHA fields from text profile missing fields
+        if ftype == 'file' or is_captcha:
+            continue
+
         stable_key = compute_stable_field_key(field_dict)
         is_required = field_dict.get('required', False)
         current_value = pre_filled_values.get(stable_key, '').strip() if pre_filled_values.get(stable_key) else ''
@@ -466,7 +474,7 @@ def compute_missing_required_fields(scraped_form: Dict, pre_filled_values: Dict)
             missing.append({
                 'name': stable_key,
                 'label': field_dict.get('label', stable_key),
-                'field_type': field_dict.get('field_type', 'text')
+                'field_type': ftype
             })
     
     return missing
