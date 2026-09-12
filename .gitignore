@@ -132,3 +132,6 @@ civicflow/backend/uploads/
 civicflow/mock_portal/storage/
 civicflow/mock_portal/uploads/
 uploads/
+
+# CivicFlow scratch files
+civicflow/scratch/
