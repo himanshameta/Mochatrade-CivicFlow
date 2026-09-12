@@ -38,13 +38,19 @@ def get_alias_map() -> Dict[str, List[str]]:
         "phone": ["phone", "mobile", "mobile_number", "mobileno", "phone_number", "contact", "tel"],
         "dob": ["dob", "date_of_birth", "dateofbirth", "birth_date", "birthdate"],
         "gender": ["gender", "sex"],
-        "address": ["address", "full_address", "street_address", "current_address", "permanent_address"],
+        "address": [
+            "address", "full_address", "street_address", "current_address", "permanent_address",
+            "residential_address", "residence_address", "home_address", "current_residential_address"
+        ],
         "city": ["city", "town"],
         "state": ["state", "province", "region"],
         "pincode": ["pincode", "pin", "pin_code", "postal_code", "postcode", "zip", "zipcode"],
         "country": ["country", "nation"],
         "pan_number": ["pan", "pan_number", "pan_no", "pannumber"],
-        "aadhaar_last4": ["aadhaar", "aadhaar_number", "aadhaar_no", "aadhaar_last4"],
+        "aadhaar_last4": [
+            "aadhaar", "aadhaar_number", "aadhaar_no", "aadhaar_last4",
+            "aadhar", "aadhar_number", "aadhar_no", "aadhar_last4"
+        ],
         "passport_number": ["passport", "passport_number", "passport_no"],
         "father_name": ["father_name", "fathers_name", "father"]
     }

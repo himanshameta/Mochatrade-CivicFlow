@@ -61,7 +61,8 @@ def get_alias_map() -> Dict[str, List[str]]:
             "address", "full_address", "fulladdress", "street_address", 
             "streetaddress", "current_address", "currentaddress",
             "permanent_address", "permanentaddress", "residential_address",
-            "residentialaddress", "addr"
+            "residentialaddress", "residence_address", "home_address",
+            "current_residential_address", "addr"
         ],
         "city": [
             "city", "town", "municipality"
@@ -80,8 +81,8 @@ def get_alias_map() -> Dict[str, List[str]]:
             "pan", "pan_number", "pan_no", "pannumber", "panno", "pan_card"
         ],
         "aadhaar_last4": [
-            "aadhaar", "aadhar", "aadhaar_number", "aadhaar_no", "aadhaarnumber",
-            "aadhaar_last4", "aadhar_last4", "uid"
+            "aadhaar", "aadhar", "aadhaar_number", "aadhar_number", "aadhaar_no",
+            "aadhar_no", "aadhaarnumber", "aadharnumber", "aadhaar_last4", "aadhar_last4", "uid"
         ],
         "passport_number": [
             "passport", "passport_number", "passport_no", "passportno", "passportnumber"
