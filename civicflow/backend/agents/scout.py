@@ -17,8 +17,18 @@ def _run_scout_sync(url: str, screenshot_dir: str) -> dict:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
         try:
-            # BUG FIX: Use domcontentloaded instead of networkidle for SPA portals
-            page.goto(url, wait_until="domcontentloaded", timeout=30000)
+            response = page.goto(url, wait_until="domcontentloaded", timeout=30000)
+            
+            if response and response.status >= 400:
+                title = page.title()
+                browser.close()
+                return {
+                    "error": f"The page returned HTTP {response.status}. Please check that the form URL is valid and publicly accessible.",
+                    "html": "",
+                    "title": title,
+                    "screenshot_path": "",
+                    "url": url,
+                }
             
             # Wait for actual page content, not network idle
             try:
