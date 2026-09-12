@@ -184,10 +184,14 @@ class UserSession(BaseModel):
     generated_script: Optional[str] = None
     script_path: Optional[str] = None
     status: Literal["created", "scraped", "collecting", "needs_user_input", "awaiting_confirmation",
-                    "confirmed", "ready", "running", "paused_captcha", "paused_otp", "paused_payment",
-                    "completed", "failed"] = "created"
+                    "confirmed", "ready", "running", "submitting", "paused_captcha", "paused_otp", "paused_payment",
+                    "interrupted", "completed", "failed"] = "created"
     pause_reason: Optional[str] = None
     pause_screenshot: Optional[str] = None
+    interruption_reason: Optional[str] = None
+    submission_confirmed: bool = False
+    completed_at: Optional[datetime] = None
+    after_submit_screenshot: Optional[str] = None
     result: Optional[str] = None
     error: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)

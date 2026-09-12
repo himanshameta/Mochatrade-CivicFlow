@@ -535,8 +535,8 @@ def route_after_executor(state: PipelineState) -> str:
     if status == "completed":
         return "notifier"
     
-    if status in ("paused_captcha", "paused_otp", "paused_payment"):
-        return END   # Human action needed — stop graph, wait for API resume
+    if status in ("interrupted", "paused_captcha", "paused_otp", "paused_payment"):
+        return END   # Terminal / Human action needed — stop graph
     
     if status in ("failed", "retrying"):
         if retry_count < 2:

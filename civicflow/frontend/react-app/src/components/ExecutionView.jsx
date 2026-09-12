@@ -108,15 +108,24 @@ const ExecutionView = ({ showToast }) => {
             addEvent({ timestamp, icon: '✓', text: `${msg.label} filled successfully`, type: 'filled' })
           } else if (msg.event === 'navigation') {
             addEvent({ timestamp, icon: '🌐', text: msg.message || 'Opening automated browser...', type: 'nav' })
-          } else if (msg.event === 'submission') {
+          } else if (msg.event === 'submitting' || msg.event === 'submission') {
+            setStatus('submitting')
             addEvent({ timestamp, icon: '🚀', text: msg.message || 'Submitting form...', type: 'submit' })
+          } else if (msg.event === 'submission_complete') {
+            setStatus('completed')
+            addEvent({ timestamp, icon: '✓', text: msg.message || 'Form submitted and verified successfully', type: 'completed' })
+          } else if (msg.event === 'interrupted') {
+            setStatus('interrupted')
+            addEvent({ timestamp, icon: '⚠', text: msg.message || 'Browser window closed by user', type: 'warning' })
           } else if (msg.event === 'captcha_detected') {
             setStatus('paused_captcha')
             if (msg.screenshot_b64) setPauseScreenshot(msg.screenshot_b64)
             addEvent({ timestamp, icon: '⚠', text: 'CAPTCHA detected — manual intervention required', type: 'warning' })
           } else if (msg.event === 'error') {
-            setStatus('failed')
-            setError(msg.message)
+            setStatus(prev => (prev === 'completed' || prev === 'interrupted' ? prev : 'failed'))
+            if (status !== 'completed' && status !== 'interrupted') {
+              setError(msg.message)
+            }
             addEvent({ timestamp, icon: '✗', text: `Execution error: ${msg.message}`, type: 'error' })
           }
         } catch (err) {
@@ -143,7 +152,14 @@ const ExecutionView = ({ showToast }) => {
 
         if (!sessionData) return
         const currentStatus = sessionData.status
-        setStatus(currentStatus)
+
+        // Protect terminal completed and interrupted states from being overwritten
+        setStatus(prev => {
+          if (prev === 'completed' || prev === 'interrupted') {
+            return prev
+          }
+          return currentStatus
+        })
 
         if (currentStatus === 'paused_captcha' || currentStatus === 'paused_otp') {
           if (sessionData.pause_screenshot) {
@@ -151,7 +167,7 @@ const ExecutionView = ({ showToast }) => {
           }
         }
 
-        if (currentStatus === 'completed' || currentStatus === 'failed') {
+        if (currentStatus === 'completed' || currentStatus === 'interrupted' || currentStatus === 'failed') {
           clearInterval(pollInterval.current)
           if (currentStatus === 'failed') {
             setError(sessionData.error || 'Execution failed')
@@ -222,6 +238,11 @@ const ExecutionView = ({ showToast }) => {
       return 'completed'
     }
 
+    if (status === 'interrupted') {
+      if (stepIndex <= 5) return 'completed'
+      return 'failed'
+    }
+
     if (status === 'completed') return 'completed'
 
     switch (stepIndex) {
@@ -229,18 +250,20 @@ const ExecutionView = ({ showToast }) => {
       case 2:
         return 'completed'
       case 3: // Preparing automation
-        if (['script_ready', 'running', 'paused_captcha', 'paused_otp'].includes(status)) return 'completed'
+        if (['script_ready', 'running', 'submitting', 'paused_captcha', 'paused_otp'].includes(status)) return 'completed'
         if (status === 'confirmed' || status === 'starting') return 'active'
         return 'pending'
       case 4: // Opening browser
-        if (['running', 'paused_captcha', 'paused_otp'].includes(status)) return 'completed'
+        if (['running', 'submitting', 'paused_captcha', 'paused_otp'].includes(status)) return 'completed'
         if (status === 'script_ready') return 'active'
         return 'pending'
       case 5: // Filling form
         if (['running', 'paused_captcha', 'paused_otp'].includes(status)) return 'active'
+        if (['submitting', 'completed'].includes(status)) return 'completed'
         return 'pending'
       case 6: // Final submission
         if (status === 'completed') return 'completed'
+        if (status === 'submitting') return 'active'
         return 'pending'
       default:
         return 'pending'
@@ -252,17 +275,21 @@ const ExecutionView = ({ showToast }) => {
     script_ready: 'Opening automated browser...',
     starting: 'Initializing execution...',
     running: currentField ? `Filling ${currentField}...` : 'Filling form on your behalf...',
+    submitting: 'Submitting form to portal...',
     paused_captcha: 'CAPTCHA detected — manual intervention required',
     paused_otp: 'OTP required — enter code below',
+    interrupted: 'Browser Window Closed',
     completed: 'Form Submitted Successfully!',
     failed: 'Execution Encountered an Error',
   }[status] || status
 
   const statusStateClass = {
     running: 'state-running',
+    submitting: 'state-running',
     script_ready: 'state-running',
     confirmed: 'state-running',
     completed: 'state-completed',
+    interrupted: 'state-paused',
     failed: 'state-failed',
     paused_captcha: 'state-paused',
     paused_otp: 'state-paused',
@@ -279,7 +306,7 @@ const ExecutionView = ({ showToast }) => {
           <p>Your information is being securely applied to the form.</p>
           <div style={{ marginTop: '0.75rem', display: 'flex', justifyContent: 'center' }}>
             <span className={`exec-status-chip ${statusStateClass}`}>
-              {(status === 'running' || status === 'confirmed' || status === 'script_ready') && (
+              {(status === 'running' || status === 'submitting' || status === 'confirmed' || status === 'script_ready') && (
                 <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: 'var(--info)', animation: 'pulse 1.5s infinite', marginRight: '0.35rem' }} />
               )}
               {status === 'confirmed' ? 'preparing' : status === 'script_ready' ? 'opening browser' : status}
@@ -309,8 +336,8 @@ const ExecutionView = ({ showToast }) => {
           })}
         </div>
 
-        {/* ── Field Progress Card (When running/script_ready/confirmed/paused) ── */}
-        {['running', 'script_ready', 'confirmed', 'paused_captcha', 'paused_otp'].includes(status) && (
+        {/* ── Field Progress Card (When running/submitting/script_ready/confirmed/paused) ── */}
+        {['running', 'submitting', 'script_ready', 'confirmed', 'paused_captcha', 'paused_otp'].includes(status) && (
           <div className="field-progress-card">
             <div className="field-progress-header">
               <span className="field-progress-title">Form Field Progress</span>
@@ -325,7 +352,7 @@ const ExecutionView = ({ showToast }) => {
                 style={{
                   width: totalFields > 0
                     ? `${Math.min(100, Math.max(8, (filledCount / totalFields) * 100))}%`
-                    : status === 'running' ? '40%' : '15%'
+                    : status === 'running' || status === 'submitting' ? '90%' : '15%'
                 }}
               />
             </div>
@@ -414,6 +441,27 @@ const ExecutionView = ({ showToast }) => {
           </div>
         </div>
 
+        {/* ── Interrupted Panel ── */}
+        {status === 'interrupted' && (
+          <div className="exec-error-panel" style={{ marginTop: '1.5rem', borderColor: 'var(--accent)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+              <AlertTriangle size={22} style={{ color: 'var(--accent)' }} />
+              <h3 style={{ margin: 0 }}>Browser Window Closed</h3>
+            </div>
+            <p style={{ fontSize: '0.88rem', color: 'var(--muted-foreground)', marginBottom: '1.25rem' }}>
+              Automation was interrupted before completion because the Playwright browser window was closed.
+            </p>
+            <div style={{ display: 'flex', gap: '1rem' }}>
+              <button onClick={handleRetryExecution} className="btn btn-primary" style={{ flex: 1 }}>
+                <RefreshCw size={16} /> Retry Execution
+              </button>
+              <button onClick={() => navigate('/dashboard')} className="btn btn-outline" style={{ flex: 1 }}>
+                <ArrowLeft size={16} /> Return to Dashboard
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* ── Success Completion Panel ── */}
         {status === 'completed' && (
           <div className="exec-completed-panel" style={{ marginTop: '1.5rem' }}>
@@ -431,7 +479,7 @@ const ExecutionView = ({ showToast }) => {
         )}
 
         {/* ── Failure Card Panel ── */}
-        {(status === 'failed' || error) && (
+        {status === 'failed' && (
           <div className="exec-error-panel" style={{ marginTop: '1.5rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
               <AlertTriangle size={22} style={{ color: '#EF4444' }} />

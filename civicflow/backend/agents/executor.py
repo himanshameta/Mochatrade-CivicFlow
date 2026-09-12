@@ -178,11 +178,11 @@ async def executor(script_path: str, session_id: str, session_store: SessionStor
         try:
             msg_type, msg_data = await loop.run_in_executor(
                 None,
-                lambda: output_queue.get(timeout=0.5)
+                lambda: output_queue.get(timeout=0.2)
             )
         except queue.Empty:
-            # Check if thread is done
-            if not thread.is_alive():
+            # Only exit if thread is no longer alive AND queue is completely empty
+            if not thread.is_alive() and output_queue.empty():
                 break
             continue
         
@@ -195,7 +195,7 @@ async def executor(script_path: str, session_id: str, session_store: SessionStor
                 event_type = parts[1] if len(parts) > 1 else "unknown"
                 event_data = parts[2] if len(parts) > 2 else ""
                 
-                # Broadcast to WebSocket if available
+                # Broadcast event to WebSocket if available
                 try:
                     from api.websocket import broadcast_event
                     await broadcast_event(session_id, {
@@ -206,21 +206,95 @@ async def executor(script_path: str, session_id: str, session_store: SessionStor
                 except Exception:
                     pass
                 
-                if event_type == "captcha_detected":
+                if event_type == "submitting":
+                    await session_store.update_status(session_id, "submitting")
+                    try:
+                        from api.websocket import broadcast_event
+                        await broadcast_event(session_id, {
+                            "event": "status_changed",
+                            "status": "submitting",
+                            "message": "Submitting form...",
+                            "timestamp": datetime.now().isoformat()
+                        })
+                    except Exception:
+                        pass
+                
+                elif event_type == "captcha_detected":
                     await session_store.update_status(session_id, "paused_captcha")
+                    try:
+                        from api.websocket import broadcast_event
+                        await broadcast_event(session_id, {
+                            "event": "status_changed",
+                            "status": "paused_captcha",
+                            "message": "CAPTCHA detected — please solve it",
+                            "timestamp": datetime.now().isoformat()
+                        })
+                    except Exception:
+                        pass
                     return {"status": "paused_captcha", "message": "CAPTCHA detected — please solve it"}
                 
                 elif event_type == "otp_detected":
                     await session_store.update_status(session_id, "paused_otp")
+                    try:
+                        from api.websocket import broadcast_event
+                        await broadcast_event(session_id, {
+                            "event": "status_changed",
+                            "status": "paused_otp",
+                            "message": "OTP required",
+                            "timestamp": datetime.now().isoformat()
+                        })
+                    except Exception:
+                        pass
                     return {"status": "paused_otp", "message": "OTP required"}
                 
+                elif event_type == "screenshot":
+                    await session_store.update_field(session_id, "after_submit_screenshot", event_data)
+                
                 elif event_type == "submission_complete":
+                    now_dt = datetime.utcnow()
                     await session_store.update_status(session_id, "completed")
+                    await session_store.update_field(session_id, "submission_confirmed", True)
+                    await session_store.update_field(session_id, "completed_at", now_dt)
+                    try:
+                        from api.websocket import broadcast_event
+                        await broadcast_event(session_id, {
+                            "event": "status_changed",
+                            "status": "completed",
+                            "message": "Form submitted successfully!",
+                            "timestamp": datetime.now().isoformat()
+                        })
+                    except Exception:
+                        pass
                     return {"status": "completed", "message": "Form submitted successfully!"}
+                
+                elif event_type == "interrupted":
+                    await session_store.update_status(session_id, "interrupted")
+                    await session_store.update_field(session_id, "interruption_reason", "browser_closed")
+                    try:
+                        from api.websocket import broadcast_event
+                        await broadcast_event(session_id, {
+                            "event": "status_changed",
+                            "status": "interrupted",
+                            "message": "Browser window closed by user",
+                            "timestamp": datetime.now().isoformat()
+                        })
+                    except Exception:
+                        pass
+                    return {"status": "interrupted", "message": "Browser window closed by user"}
                 
                 elif event_type == "error":
                     await session_store.update_status(session_id, "failed")
                     await session_store.update_field(session_id, "error", event_data)
+                    try:
+                        from api.websocket import broadcast_event
+                        await broadcast_event(session_id, {
+                            "event": "status_changed",
+                            "status": "failed",
+                            "message": event_data,
+                            "timestamp": datetime.now().isoformat()
+                        })
+                    except Exception:
+                        pass
                     return {"status": "failed", "message": event_data}
 
         elif msg_type == "stderr":
@@ -230,6 +304,11 @@ async def executor(script_path: str, session_id: str, session_store: SessionStor
         
         elif msg_type == "done":
             return_code = msg_data
+            curr_session = await session_store.load(session_id)
+            curr_status = curr_session.status if curr_session else "unknown"
+            if curr_status in ("completed", "interrupted", "paused_captcha", "paused_otp"):
+                return {"status": curr_status, "message": f"Execution finished with status {curr_status}"}
+
             if return_code == 0:
                 await session_store.update_status(session_id, "completed")
                 return {"status": "completed", "message": "Script completed"}
@@ -241,10 +320,20 @@ async def executor(script_path: str, session_id: str, session_store: SessionStor
                 return {"status": "failed", "message": err_detail}
         
         elif msg_type == "error":
+            curr_session = await session_store.load(session_id)
+            curr_status = curr_session.status if curr_session else "unknown"
+            if curr_status in ("completed", "interrupted", "paused_captcha", "paused_otp"):
+                return {"status": curr_status, "message": f"Execution finished with status {curr_status}"}
+
             err_msg = str(msg_data)
             await session_store.update_status(session_id, "failed")
             await session_store.update_field(session_id, "error", err_msg)
             return {"status": "failed", "message": err_msg}
+
+    curr_session = await session_store.load(session_id)
+    curr_status = curr_session.status if curr_session else "unknown"
+    if curr_status in ("completed", "interrupted", "paused_captcha", "paused_otp"):
+        return {"status": curr_status, "message": f"Execution finished with status {curr_status}"}
 
     err_detail = "\n".join(stderr_lines) if stderr_lines else "Script ended without completion signal"
     await session_store.update_status(session_id, "failed")
