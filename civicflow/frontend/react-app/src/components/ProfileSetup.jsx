@@ -227,11 +227,11 @@ const ProfileSetup = ({ user, showToast }) => {
                 <div className="form-group">
                   <label htmlFor="aadhaar">Aadhaar Number <span className="field-sensitive-tag"><Lock size={12} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '2px' }} /> Encrypted</span></label>
                   <input
-                    type="password"
+                    type="text"
                     id="aadhaar"
-                    value={profile.aadhaar_number || profile.aadhaar || ''}
+                    value={profile.aadhaar_last4 ? `XXXX XXXX ${profile.aadhaar_last4}` : (profile.aadhaar_number || profile.aadhaar || '')}
                     onChange={(e) => handleChange('aadhaar_number', e.target.value)}
-                    placeholder="XXXX XXXX XXXX"
+                    placeholder="XXXX XXXX XXXX (12 digits)"
                   />
                 </div>
                 <div className="form-group">

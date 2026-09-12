@@ -135,7 +135,7 @@ const FormReview = ({ showToast }) => {
       setFileRequirements(data.file_requirements || [])
       setDebugPayload(null)
 
-      if (data.status === 'error') {
+      if (data.status === 'error' || data.status === 'failed') {
         setErrorMessage(data.blockers?.[0] || 'Backend returned error status')
         setUiStep(UI_STEPS.ERROR)
       } else if (data.ready_for_execution) {
@@ -147,12 +147,15 @@ const FormReview = ({ showToast }) => {
       showToast('Form loaded — please review', 'info')
     } catch (error) {
       console.error('[ConfirmData] Fetch error:', error)
-      if (error.response?.status === 400) {
+      if (sessionStatus === 'failed') {
+        setErrorMessage(error.response?.data?.detail || errorMessage || 'Pipeline execution failed')
+        setUiStep(UI_STEPS.ERROR)
+      } else if (error.response?.status === 400) {
         showToast(error.response.data.detail || 'Form not scraped yet', 'warning')
         setTimeout(() => startPolling(), 3000)
       } else {
         setErrorMessage(`Failed to load form data: ${error.message}`)
-        setUiStep(UI_STEPS.AWAITING_CONFIRMATION)
+        setUiStep(UI_STEPS.ERROR)
       }
     }
   }

@@ -564,7 +564,21 @@ def build_graph():
     
     # Add edges
     workflow.set_entry_point("scout")
-    workflow.add_edge("scout", "scraper")
+    
+    # Conditional edge after scout
+    def route_after_scout(state: PipelineState) -> str:
+        if state.get("status") == "failed" or not state.get("html"):
+            return END  # Stop immediately if scout failed or page returned no HTML
+        return "scraper"
+
+    workflow.add_conditional_edges(
+        "scout",
+        route_after_scout,
+        {
+            "scraper": "scraper",
+            END: END
+        }
+    )
     
     # Conditional edge after scraper
     def route_after_scraper(state: PipelineState) -> str:
