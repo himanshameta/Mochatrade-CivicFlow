@@ -129,4 +129,6 @@ react-app/.vite/
 
 # CivicFlow runtime/generated data
 civicflow/backend/uploads/
+civicflow/mock_portal/storage/
+civicflow/mock_portal/uploads/
 uploads/

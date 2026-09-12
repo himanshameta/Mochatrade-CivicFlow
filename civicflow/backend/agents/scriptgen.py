@@ -63,8 +63,8 @@ async def scriptgen(scraped_form, session_id: str, pre_filled_values: dict = Non
         try:
             ast.parse(script_content)
         except SyntaxError as e:
-            print(f"[ScriptGen] ⚠ Generated script syntax error: {e}")
-            print(f"[ScriptGen] ⚠ Generated script was:\n{script_content}")
+            print(f"[ScriptGen] [WARN] Generated script syntax error: {e}")
+            print(f"[ScriptGen] [WARN] Generated script was:\n{script_content}")
             
             # PART 7: Add file dump on failure
             upload_dir = os.getenv("UPLOAD_DIR", "./uploads")
@@ -90,12 +90,12 @@ async def scriptgen(scraped_form, session_id: str, pre_filled_values: dict = Non
         with open(script_path, "w", encoding="utf-8") as f:
             f.write(script_content)
         
-        print(f"[ScriptGen] ✓ Script generated using executor_field_handler ({len(script_content)} chars)")
-        print(f"[ScriptGen] ✓ Script saved: {script_path}")
+        print(f"[ScriptGen] [OK] Script generated using executor_field_handler ({len(script_content)} chars)")
+        print(f"[ScriptGen] [OK] Script saved: {script_path}")
         return script_content
         
     except Exception as e:
-        print(f"[ScriptGen] ⚠ executor_field_handler failed: {e}")
+        print(f"[ScriptGen] [WARN] executor_field_handler failed: {e}")
         # Re-raise to fail properly if it's a syntax error
         if isinstance(e, RuntimeError) and "Generated invalid python" in str(e):
             raise e

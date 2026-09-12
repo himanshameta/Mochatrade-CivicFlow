@@ -73,7 +73,7 @@ def get_alias_map() -> Dict[str, List[str]]:
         "middle_name": ["middle_name", "middlename", "middle"],
         "last_name": ["last_name", "lastname", "surname", "family_name"],
         "email": ["email", "email_id", "emailaddress", "email_address", "mail"],
-        "phone": ["phone", "mobile", "mobile_number", "mobileno", "phone_number", "contact", "tel"],
+        "phone": ["phone", "mobile", "mobile_number", "mobileno", "phone_number", "contact", "contact_number", "contactno", "tel"],
         "dob": ["dob", "date_of_birth", "dateofbirth", "birth_date", "birthdate"],
         "gender": ["gender", "sex"],
         "address": [
@@ -470,6 +470,14 @@ def map_profile_to_fields(fields_list: List[Dict], profile: Dict) -> Tuple[Dict,
     missing_fields = []
     
     for field_dict in fields_list:
+        ftype = field_dict.get('field_type', 'text')
+        lbl = (field_dict.get('label') or '').lower()
+        is_captcha = field_dict.get('is_captcha') or ('captcha' in lbl) or ('robot' in lbl)
+        
+        # Skip file fields and CAPTCHA fields from text profile missing fields
+        if ftype == 'file' or is_captcha:
+            continue
+
         matched_key, matched_value = match_profile_value_to_field(field_dict, profile)
         stable_key = compute_stable_field_key(field_dict)
         

@@ -586,9 +586,13 @@ def detect_captcha(html: str) -> tuple[bool, Optional[str]]:
     if recaptcha_iframe:
         return True, "recaptcha"
     
-    # Check for reCAPTCHA response textarea
+    # Check for reCAPTCHA response textarea or g-recaptcha div
     recaptcha_response = soup.find("textarea", {"name": "g-recaptcha-response"})
     if recaptcha_response:
+        return True, "recaptcha"
+    
+    recaptcha_div = soup.find(attrs={"class": re.compile(r"\bg-recaptcha\b", re.I)})
+    if recaptcha_div:
         return True, "recaptcha"
     
     # Check for hCaptcha
@@ -668,10 +672,10 @@ async def scraper(html: str, url: str) -> Optional[dict]:
         return None
     
     if len(html.strip()) < 100:
-        print(f"[Scraper] ✗ HTML too short: {len(html.strip())} chars")
+        print(f"[Scraper] [FAIL] HTML too short: {len(html.strip())} chars")
         return None
     
-    print(f"[Scraper] ✓ Processing HTML of length {len(html)}")
+    print(f"[Scraper] [OK] Processing HTML of length {len(html)}")
     
     try:
         soup = BeautifulSoup(html, "lxml")
@@ -865,7 +869,7 @@ async def scraper(html: str, url: str) -> Optional[dict]:
         
         has_file_upload = any(f["field_type"] == "file" for f in fields)
         
-        print(f"[Scraper] ✓ Extracted {len(fields)} fields | Submit: {submit_selector} | CAPTCHA: {has_captcha}")
+        print(f"[Scraper] [OK] Extracted {len(fields)} fields | Submit: {submit_selector} | CAPTCHA: {has_captcha}")
         
         from datetime import datetime
         return {

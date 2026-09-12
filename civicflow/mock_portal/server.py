@@ -1,11 +1,13 @@
 import os
 from flask import Flask, request, jsonify, render_template_string
 from dotenv import load_dotenv
+from talentbridge import talentbridge_bp
 
 load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = "mock_secret"
+app.register_blueprint(talentbridge_bp, url_prefix='/talentbridge')
 
 # -----------------------------------------------------------------------------
 # Route: Base CAPTCHA Form

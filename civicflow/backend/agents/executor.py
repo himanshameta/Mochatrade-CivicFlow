@@ -35,7 +35,7 @@ class ExecutorRedis:
                 self.redis = await from_url(self.redis_url, decode_responses=True)
                 await self.redis.ping()
             except Exception as e:
-                print(f"[ExecutorRedis] ✗ Redis unavailable: {e}")
+                print(f"[ExecutorRedis] [FAIL] Redis unavailable: {e}")
                 print(f"[ExecutorRedis] → Using in-memory fallback")
                 self._use_fallback = True
                 return self
@@ -116,6 +116,7 @@ def _read_stream(stream, msg_type, output_queue):
 def _run_script_in_thread(script_path: str, output_queue: queue.Queue):
     """Run the Playwright script in a thread, capture stdout and stderr concurrently without deadlock."""
     try:
+        script_path = os.path.abspath(script_path)
         # Backend directory — all generated scripts need this on their sys.path
         backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -314,7 +315,7 @@ async def executor(script_path: str, session_id: str, session_store: SessionStor
                 return {"status": "completed", "message": "Script completed"}
             else:
                 err_detail = "\n".join(stderr_lines) if stderr_lines else f"Script exited with code {return_code}"
-                print(f"[Executor] ✗ Subprocess failed with code {return_code}:\n{err_detail}")
+                print(f"[Executor] [FAIL] Subprocess failed with code {return_code}:\n{err_detail}")
                 await session_store.update_status(session_id, "failed")
                 await session_store.update_field(session_id, "error", err_detail)
                 return {"status": "failed", "message": err_detail}

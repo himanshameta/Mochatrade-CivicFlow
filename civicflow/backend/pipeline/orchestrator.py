@@ -279,9 +279,10 @@ async def node_check_completeness(state: PipelineState) -> PipelineState:
     file_fields = [f for f in fields if (f.get("field_type") if isinstance(f, dict) else getattr(f, "field_type", "")) == "file"]
     
     # 3. Match documents using ranked matcher
-    from utils.document_matcher import match_documents_for_file_field
+    from utils.document_matcher import match_documents_for_file_field, infer_category_from_label
     
     file_requirements = []
+    session_selected_docs = {}
     blockers = []
     
     for f in file_fields:
@@ -305,14 +306,27 @@ async def node_check_completeness(state: PipelineState) -> PipelineState:
                 "score": m.score,
             })
         
-        # Determine status
+        # Determine auto-selection confidence
+        selected_doc_id = None
         status = "optional_unset"
-        if required and not matched_saved:
+        
+        if matched_saved:
+            top_match = matched_saved[0]
+            inferred_cat = infer_category_from_label(label)
+            # High confidence criteria: score >= 40.0 and category matches inferred label category or "resume"
+            is_confident = (top_match["score"] >= 40.0) and (
+                top_match["category"] == "resume" or (inferred_cat and top_match["category"] == inferred_cat)
+            )
+            if is_confident:
+                selected_doc_id = top_match["document_id"]
+                status = "ready"
+                session_selected_docs[key] = [selected_doc_id]
+                print(f"[Pipeline] [OK] Auto-selected vault document '{top_match['display_name']}' for file field '{label}' (score={top_match['score']})")
+
+        if required and not selected_doc_id:
             status = "missing"
             accept_msg = f" ({accept})" if accept else ""
-            blockers.append(f"Required document '{label}'{accept_msg} is missing. Please upload it.")
-        elif required:
-            status = "missing"  # Still missing until user explicitly selects
+            blockers.append(f"Required document '{label}'{accept_msg} is missing. Please select or upload a document.")
         
         file_requirements.append({
             "key": key,
@@ -322,7 +336,7 @@ async def node_check_completeness(state: PipelineState) -> PipelineState:
             "accept": accept,
             "multiple": multiple,
             "matched_saved_documents": matched_saved,
-            "selected_document_id": None,
+            "selected_document_id": selected_doc_id,
             "status": status,
         })
 
@@ -347,6 +361,10 @@ async def node_check_completeness(state: PipelineState) -> PipelineState:
     session = await session_store.load(state["session_id"])
     if session:
         session.file_requirements = file_requirements
+        if session_selected_docs:
+            existing_selected = session.selected_documents or {}
+            existing_selected.update(session_selected_docs)
+            session.selected_documents = existing_selected
         session.blockers = blockers
         session.ready_for_execution = state["ready_for_execution"]
         session.status = state["status"]
