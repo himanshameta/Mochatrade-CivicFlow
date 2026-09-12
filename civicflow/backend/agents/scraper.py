@@ -154,6 +154,18 @@ def normalize_label(text: str) -> str:
 
 def get_label_for_element(element: Tag, soup: BeautifulSoup) -> str:
     """Extract label text for an input element with priority strategy."""
+    # 0. Try Google Forms / ARIA question container heading or .M7eMe FIRST for containerized form items
+    container = element.find_parent(attrs={"role": "listitem"}) or element.find_parent(class_=re.compile(r"(geFormPage|QrShBc|freebirdFormviewerViewItemsItemItem)", re.I))
+    if container:
+        heading = container.find(attrs={"role": "heading"}) or container.find(class_=re.compile(r"M7eMe", re.I))
+        if heading:
+            txt = heading.get_text(strip=True)
+            if txt:
+                return normalize_label(txt)
+        c_aria = container.get("aria-label", "")
+        if c_aria:
+            return normalize_label(c_aria)
+
     # 1. Try id-matching label
     element_id = element.get("id", "")
     if element_id:
@@ -177,18 +189,6 @@ def get_label_for_element(element: Tag, soup: BeautifulSoup) -> str:
         ref_elem = soup.find(id=aria_labelledby)
         if ref_elem:
             return normalize_label(ref_elem.get_text())
-    
-    # 5. Try Google Forms / ARIA question container heading or .M7eMe
-    container = element.find_parent(attrs={"role": "listitem"}) or element.find_parent(class_=re.compile(r"(geFormPage|QrShBc|freebirdFormviewerViewItemsItemItem)", re.I))
-    if container:
-        heading = container.find(attrs={"role": "heading"}) or container.find(class_=re.compile(r"M7eMe", re.I))
-        if heading:
-            txt = heading.get_text(strip=True)
-            if txt:
-                return normalize_label(txt)
-        c_aria = container.get("aria-label", "")
-        if c_aria:
-            return normalize_label(c_aria)
 
     # 6. Try previous label sibling
     prev_label = element.find_previous_sibling("label")

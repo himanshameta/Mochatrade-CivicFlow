@@ -111,12 +111,15 @@ async def get_confirmation_data(session_id: str):
         
         for field in review_fields:
             ftype = field.field_type
-            lbl = (field.label or '').lower()
-            key = (field.key or getattr(field, 'name', '') or '').lower()
+            lbl = (field.label or '').strip().lower()
+            key = (field.key or getattr(field, 'name', '') or '').strip().lower()
             is_captcha = getattr(field, 'is_captcha', False) or (key == 'captcha_verified') or ('captcha' in lbl) or ('robot' in lbl) or ('captcha' in key) or ('recaptcha' in key)
+            is_gf_internal_artifact = lbl in ("your answer", "your_answer", "generic date") or key in ("your_answer", "your_answer_textarea")
 
-            # Skip file fields and CAPTCHA fields from text profile missing/editable fields
-            if ftype == 'file' or is_captcha:
+            # Skip file fields, CAPTCHA fields, and generic internal artifact fields from missing_required_fields calculation
+            if ftype == 'file' or is_captcha or is_gf_internal_artifact:
+                if field.value:
+                    canonical_fields.append(field)
                 continue
 
             if field.value:

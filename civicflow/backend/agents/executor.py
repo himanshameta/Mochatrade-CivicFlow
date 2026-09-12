@@ -266,12 +266,15 @@ async def executor(script_path: str, session_id: str, session_store: SessionStor
                 
                 elif event_type == "submission_complete":
                     now_dt = datetime.utcnow()
-                    app_id = event_data.strip() if event_data and (event_data.strip().startswith("CF-") or len(event_data.strip()) > 3) else None
+                    app_id = event_data.strip() if event_data and event_data.strip().startswith("CF-") else None
                     await session_store.update_status(session_id, "completed")
                     await session_store.update_field(session_id, "submission_confirmed", True)
                     await session_store.update_field(session_id, "completed_at", now_dt)
                     if app_id:
-                        await session_store.update_field(session_id, "application_id", app_id)
+                        try:
+                            await session_store.update_field(session_id, "application_id", app_id)
+                        except Exception:
+                            pass
                     try:
                         from api.websocket import broadcast_event
                         await broadcast_event(session_id, {
