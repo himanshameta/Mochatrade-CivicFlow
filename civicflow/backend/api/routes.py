@@ -1150,8 +1150,12 @@ async def execute_automation(session_id: str, background_tasks: BackgroundTasks)
             raise HTTPException(status_code=400, detail="No form found. Run analysis first.")
         
         # Check if data is confirmed
-        if session.status not in ["confirmed", "ready"]:
+        if session.status not in ["confirmed", "ready", "running"]:
             raise HTTPException(status_code=400, detail="Please confirm data before executing autofill.")
+        
+        # Immediately set status to running in SessionStore so polls return running right away
+        await session_store.update_status(session_id, "running")
+        await session_store.update_field(session_id, "error", None)
         
         print(f"[Execute] Using {len(session.pre_filled_values or {})} confirmed values for autofill")
         print(f"[Execute] Confirmed value keys: {list((session.pre_filled_values or {}).keys())}")

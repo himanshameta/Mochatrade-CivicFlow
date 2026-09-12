@@ -98,8 +98,23 @@ def extract_selector_from_error(error_msg: str) -> Optional[str]:
     return None
 
 
+def _read_stream(stream, msg_type, output_queue):
+    try:
+        for line in iter(stream.readline, ""):
+            line = line.strip()
+            if line:
+                output_queue.put((msg_type, line))
+    except Exception as e:
+        output_queue.put(("error", f"Error reading {msg_type}: {e}"))
+    finally:
+        try:
+            stream.close()
+        except Exception:
+            pass
+
+
 def _run_script_in_thread(script_path: str, output_queue: queue.Queue):
-    """Run the Playwright script in a thread, capture stdout line by line."""
+    """Run the Playwright script in a thread, capture stdout and stderr concurrently without deadlock."""
     try:
         # Backend directory — all generated scripts need this on their sys.path
         backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -109,6 +124,8 @@ def _run_script_in_thread(script_path: str, output_queue: queue.Queue):
         env = os.environ.copy()
         existing_pythonpath = env.get("PYTHONPATH", "")
         env["PYTHONPATH"] = backend_dir + (os.pathsep + existing_pythonpath if existing_pythonpath else "")
+        env["PYTHONIOENCODING"] = "utf-8"
+        env["PYTHONUNBUFFERED"] = "1"
 
         proc = subprocess.Popen(
             [sys.executable, script_path],
@@ -118,18 +135,20 @@ def _run_script_in_thread(script_path: str, output_queue: queue.Queue):
             bufsize=1,  # Line buffered
             cwd=backend_dir,
             env=env,
+            encoding="utf-8",
+            errors="replace"
         )
 
-        for line in iter(proc.stdout.readline, ""):
-            line = line.strip()
-            if line:
-                output_queue.put(("stdout", line))
+        t_out = threading.Thread(target=_read_stream, args=(proc.stdout, "stdout", output_queue), daemon=True)
+        t_err = threading.Thread(target=_read_stream, args=(proc.stderr, "stderr", output_queue), daemon=True)
+        t_out.start()
+        t_err.start()
 
-        proc.wait()
-        stderr = proc.stderr.read()
-        if stderr:
-            output_queue.put(("stderr", stderr))
-        output_queue.put(("done", proc.returncode))
+        return_code = proc.wait()
+        t_out.join(timeout=2.0)
+        t_err.join(timeout=2.0)
+
+        output_queue.put(("done", return_code))
 
     except Exception as e:
         output_queue.put(("error", str(e)))
@@ -138,6 +157,10 @@ def _run_script_in_thread(script_path: str, output_queue: queue.Queue):
 async def executor(script_path: str, session_id: str, session_store: SessionStore, max_retries: int = 2) -> dict:
     """Run script in thread, process output events asynchronously."""
     output_queue = queue.Queue()
+    stderr_lines = []
+    
+    # Persist running status immediately before thread starts
+    await session_store.update_status(session_id, "running")
     
     # Start script in background thread
     thread = threading.Thread(
@@ -163,10 +186,9 @@ async def executor(script_path: str, session_id: str, session_store: SessionStor
                 break
             continue
         
-        print(f"[Executor stdout] {msg_data}")
-        
         if msg_type == "stdout":
-            line = msg_data
+            line = str(msg_data)
+            print(f"[Executor stdout] {line}")
             
             if line.startswith("EVENT:"):
                 parts = line.split(":", 2)
@@ -198,7 +220,13 @@ async def executor(script_path: str, session_id: str, session_store: SessionStor
                 
                 elif event_type == "error":
                     await session_store.update_status(session_id, "failed")
+                    await session_store.update_field(session_id, "error", event_data)
                     return {"status": "failed", "message": event_data}
+
+        elif msg_type == "stderr":
+            line = str(msg_data)
+            print(f"[Executor stderr] {line}")
+            stderr_lines.append(line)
         
         elif msg_type == "done":
             return_code = msg_data
@@ -206,14 +234,22 @@ async def executor(script_path: str, session_id: str, session_store: SessionStor
                 await session_store.update_status(session_id, "completed")
                 return {"status": "completed", "message": "Script completed"}
             else:
+                err_detail = "\n".join(stderr_lines) if stderr_lines else f"Script exited with code {return_code}"
+                print(f"[Executor] ✗ Subprocess failed with code {return_code}:\n{err_detail}")
                 await session_store.update_status(session_id, "failed")
-                return {"status": "failed", "message": f"Script exited with code {return_code}"}
+                await session_store.update_field(session_id, "error", err_detail)
+                return {"status": "failed", "message": err_detail}
         
-        elif msg_type in ("error", "stderr"):
+        elif msg_type == "error":
+            err_msg = str(msg_data)
             await session_store.update_status(session_id, "failed")
-            return {"status": "failed", "message": f"Script error: {msg_data}"}
-    
-    return {"status": "failed", "message": "Script ended without completion signal"}
+            await session_store.update_field(session_id, "error", err_msg)
+            return {"status": "failed", "message": err_msg}
+
+    err_detail = "\n".join(stderr_lines) if stderr_lines else "Script ended without completion signal"
+    await session_store.update_status(session_id, "failed")
+    await session_store.update_field(session_id, "error", err_detail)
+    return {"status": "failed", "message": err_detail}
 
 
 async def resume_after_captcha(session_id: str, session_store: SessionStore) -> dict:

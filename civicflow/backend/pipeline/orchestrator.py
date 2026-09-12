@@ -365,6 +365,7 @@ def route_after_completeness(state: PipelineState) -> str:
 async def node_scriptgen(state: PipelineState) -> PipelineState:
     """Generate custom Playwright automation script"""
     print(f"\n[Pipeline] Node: ScriptGen - Generating automation script")
+    await session_store.update_status(state["session_id"], "running")
     
     # GUARD: If analyst failed (status is failed), stop immediately
     if state.get("status") == "failed":
@@ -375,10 +376,13 @@ async def node_scriptgen(state: PipelineState) -> PipelineState:
     raw = state.get("scraped_form")
     if raw is None:
         print("[Pipeline] [FAIL] ScriptGen ABORTED: scraped_form is None — scraping failed earlier")
+        err_msg = "Form scraping returned no data. Cannot generate script."
+        await session_store.update_status(state["session_id"], "failed")
+        await session_store.update_field(state["session_id"], "error", err_msg)
         return {
             **state,
             "status": "failed",
-            "error": "Form scraping returned no data. Cannot generate script.",
+            "error": err_msg,
             "retry_count": 999  # Set high so retry edge goes to END
         }
     
@@ -392,10 +396,13 @@ async def node_scriptgen(state: PipelineState) -> PipelineState:
             raise ValueError(f"Unexpected type for scraped_form: {type(raw)}")
     except Exception as e:
         print(f"[Pipeline] [FAIL] ScriptGen ABORTED: cannot parse scraped_form: {e}")
+        err_msg = f"Cannot parse scraped form: {str(e)}"
+        await session_store.update_status(state["session_id"], "failed")
+        await session_store.update_field(state["session_id"], "error", err_msg)
         return {
             **state,
             "status": "failed",
-            "error": f"Cannot parse scraped form: {str(e)}",
+            "error": err_msg,
             "retry_count": 999
         }
     
@@ -423,6 +430,7 @@ async def node_scriptgen(state: PipelineState) -> PipelineState:
         script_path = Path(upload_dir) / "scripts" / f"{state['session_id']}.py"
         
         print(f"[Pipeline] [OK] ScriptGen succeeded: {script_path}")
+        await session_store.update_field(state["session_id"], "script_path", str(script_path))
         return {
             **state,
             "generated_script": script,
@@ -432,10 +440,13 @@ async def node_scriptgen(state: PipelineState) -> PipelineState:
         }
     except Exception as e:
         print(f"[Pipeline] [FAIL] ScriptGen failed with exception: {e}")
+        err_msg = f"ScriptGen exception: {str(e)}"
+        await session_store.update_status(state["session_id"], "failed")
+        await session_store.update_field(state["session_id"], "error", err_msg)
         return {
             **state,
             "status": "failed",
-            "error": f"ScriptGen exception: {str(e)}",
+            "error": err_msg,
             "retry_count": state.get("retry_count", 0) + 1
         }
 
@@ -448,6 +459,15 @@ async def node_executor(state: PipelineState) -> PipelineState:
     script_path = state.get("script_path")
     if not script_path:
         print("[Pipeline] [FAIL] Executor skipped — no script_path in state")
+        err_msg = "No script was generated — check ScriptGen logs above"
+        await session_store.update_status(state["session_id"], "failed")
+        await session_store.update_field(state["session_id"], "error", err_msg)
+        return {
+            **state,
+            "status": "failed",
+            "error": err_msg,
+            "retry_count": state.get("retry_count", 0) + 1
+        }
         return {
             **state,
             "status": "failed",
@@ -792,6 +812,8 @@ async def resume_pipeline(
     elif resume_type == "user_data":
         # User provided missing data - re-enter at check_completeness
         print(f"[Pipeline] User data updated - resuming from completeness check")
+        await session_store.update_status(session_id, "running")
+        await session_store.update_field(session_id, "error", None)
         
         # Convert session to dict for safe access
         if hasattr(session, 'model_dump'):
