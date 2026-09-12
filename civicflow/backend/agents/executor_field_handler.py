@@ -62,18 +62,36 @@ def generate_fill_code(field: dict, value: str, session_id: str, b: PyBuilder) -
     value_json = json.dumps(str(value))
     selector_json = json.dumps(str(selector))
     
-    if field_type in ['text', 'email', 'tel', 'number', 'password', 'url', 'search']:
-        b.add(f"await page.locator({selector_json}).fill({value_json})")
+    if field_type in ['text', 'email', 'tel', 'number', 'password', 'url', 'search', 'textarea', 'date']:
+        b.add(f"target_loc = page.locator({selector_json})")
+        b.add("if await target_loc.count() != 1:")
+        b.indent()
+        b.add(f"refined = page.locator({json.dumps(f'div[role=\"listitem\"]:has-text(\"{raw_label}\") input, div[role=\"listitem\"]:has-text(\"{raw_label}\") textarea, input[aria-label=\"{raw_label}\"]')})")
+        b.add("if await refined.count() > 0:")
+        b.indent()
+        b.add("target_loc = refined.first")
+        b.dedent()
+        b.dedent()
+        b.add("if await target_loc.count() > 0:")
+        b.indent()
+        b.add("elem = target_loc.first")
+        b.add("tag = await elem.evaluate('el => el.tagName.toLowerCase()')")
+        b.add("if tag not in ['input', 'textarea', 'select'] and not (await elem.evaluate('el => el.isContentEditable')):")
+        b.indent()
+        b.add("inner = elem.locator('input, textarea')")
+        b.add("if await inner.count() > 0:")
+        b.indent()
+        b.add("elem = inner.first")
+        b.dedent()
+        b.dedent()
+        b.add(f"await elem.fill({value_json})")
         b.add("await asyncio.sleep(0.3)")
-    
-    elif field_type == 'textarea':
-        b.add(f"await page.locator({selector_json}).fill({value_json})")
-        b.add("await asyncio.sleep(0.3)")
-    
-    elif field_type == 'date':
-        b.add(f"date_input = page.locator({selector_json})")
-        b.add(f"await date_input.fill({value_json})")
-        b.add("await asyncio.sleep(0.3)")
+        b.add(f"print({py_string('EVENT:field_filled:' + label + ':')})")
+        b.dedent()
+        b.add("else:")
+        b.indent()
+        b.add(f"print({py_string('EVENT:field_skipped:' + label + ':selector not found')})")
+        b.dedent()
     
     elif field_type == 'select':
         b.add(f"select_elem = page.locator({selector_json})")

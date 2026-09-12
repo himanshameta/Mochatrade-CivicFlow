@@ -391,23 +391,32 @@ def extract_aria_and_google_forms_fields(soup: BeautifulSoup, target_form: Tag) 
                 })
                 continue
 
-        # 4. Text / Textarea Check
+        # 4. Text / Textarea / Date Check
         textarea = container.find("textarea") or container.find(class_=re.compile(r"KHwjSy|SPErbc", re.I))
         if textarea:
             name = textarea.get("name") or (entry_names[0] if entry_names else "")
             jsname = textarea.get("jsname", "")
             elem_id = textarea.get("id", "")
+            aria_lbl = textarea.get("aria-label", "") or label_text
             dedup_key = name or elem_id or label_text or f"textarea_{len(fields)}"
             if dedup_key not in seen_keys and label_text:
                 seen_keys.add(dedup_key)
-                primary_selector = f"#{elem_id}" if elem_id else (f"[name='{name}']" if name else ("textarea[jsname]" if jsname else "textarea"))
+                if aria_lbl:
+                    primary_selector = f"textarea[aria-label='{aria_lbl}']"
+                elif name:
+                    primary_selector = f"[name='{name}']"
+                elif jsname and textarea.name == "textarea":
+                    primary_selector = f"textarea[jsname='{jsname}']"
+                else:
+                    primary_selector = f"div[role='listitem']:has-text('{label_text}') textarea" if label_text else "textarea"
+
                 selector_priority = []
+                if aria_lbl:
+                    selector_priority.append(f"textarea[aria-label='{aria_lbl}']")
                 if label_text:
                     selector_priority.append(f"getByLabel('{label_text}')")
                 if name:
                     selector_priority.append(f"[name='{name}']")
-                if jsname:
-                    selector_priority.append(f"[jsname='{jsname}']")
 
                 fields.append({
                     "field_id": str(uuid.uuid4()),
@@ -428,8 +437,9 @@ def extract_aria_and_google_forms_fields(soup: BeautifulSoup, target_form: Tag) 
                 continue
 
         text_input = (
-            container.find("input", attrs={"type": re.compile(r"^(text|email|tel|number)$", re.I)}) or
+            container.find("input", attrs={"type": re.compile(r"^(text|email|tel|number|date)$", re.I)}) or
             container.find("input", attrs={"jsname": True}) or
+            container.find("input") or
             container.find(class_=re.compile(r"whsOnd|zWSnvd", re.I)) or
             container.find(attrs={"contenteditable": "true"})
         )
@@ -438,11 +448,18 @@ def extract_aria_and_google_forms_fields(soup: BeautifulSoup, target_form: Tag) 
             elem_id = ""
             jsname = ""
             placeholder = ""
+            aria_lbl = ""
+            input_type = "text"
+            
             if text_input:
                 name = text_input.get("name", "")
                 elem_id = text_input.get("id", "")
                 jsname = text_input.get("jsname", "")
                 placeholder = text_input.get("placeholder", "")
+                aria_lbl = text_input.get("aria-label", "")
+                raw_type = text_input.get("type", "text").lower()
+                if raw_type in ["email", "tel", "number", "date"]:
+                    input_type = raw_type
 
             if not name and entry_names:
                 name = entry_names[0]
@@ -450,19 +467,37 @@ def extract_aria_and_google_forms_fields(soup: BeautifulSoup, target_form: Tag) 
             dedup_key = name or elem_id or label_text or f"text_{len(fields)}"
             if dedup_key not in seen_keys and label_text:
                 seen_keys.add(dedup_key)
-                primary_selector = f"#{elem_id}" if elem_id else (f"[name='{name}']" if name else (f"[jsname='{jsname}']" if jsname else "input[type='text']"))
+                
+                # Priority 1: name if specific entry or emailAddress
+                if name and (name.startswith("entry.") or name == "emailAddress"):
+                    primary_selector = f"input[name='{name}']"
+                # Priority 2: explicit aria-label on input
+                elif aria_lbl:
+                    primary_selector = f"input[aria-label='{aria_lbl}']"
+                # Priority 3: element id
+                elif elem_id:
+                    primary_selector = f"#{elem_id}"
+                # Priority 4: jsname ONLY if tag is input
+                elif jsname and text_input and text_input.name == "input":
+                    primary_selector = f"input[jsname='{jsname}']"
+                # Priority 5: listitem container anchor
+                elif label_text:
+                    primary_selector = f"div[role='listitem']:has-text('{label_text}') input"
+                else:
+                    primary_selector = "input[type='text']"
+
                 selector_priority = []
+                if aria_lbl:
+                    selector_priority.append(f"input[aria-label='{aria_lbl}']")
                 if label_text:
                     selector_priority.append(f"getByLabel('{label_text}')")
                 if name:
-                    selector_priority.append(f"[name='{name}']")
-                if jsname:
-                    selector_priority.append(f"[jsname='{jsname}']")
+                    selector_priority.append(f"input[name='{name}']")
 
                 fields.append({
                     "field_id": str(uuid.uuid4()),
                     "label": label_text,
-                    "field_type": "text",
+                    "field_type": input_type,
                     "name": name,
                     "id_attr": elem_id,
                     "placeholder": placeholder,

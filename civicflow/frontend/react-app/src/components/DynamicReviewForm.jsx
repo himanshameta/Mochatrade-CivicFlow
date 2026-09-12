@@ -7,6 +7,14 @@ function isSensitiveField(key) {
   return SENSITIVE_PATTERNS.some(p => p.test(key))
 }
 
+function isAadhaarField(field) {
+  if (!field) return false
+  const k = (field.key || '').toLowerCase()
+  const l = (field.label || '').toLowerCase()
+  const m = (field.matched_profile_key || '').toLowerCase()
+  return k.includes('aadhaar') || k.includes('aadhar') || l.includes('aadhaar') || l.includes('aadhar') || m.includes('aadhaar') || m.includes('aadhar')
+}
+
 const DynamicReviewForm = ({
   fields,
   editableRequired = [],
@@ -178,6 +186,11 @@ const DynamicReviewForm = ({
                   </label>
                 </div>
                 {renderField(field, idx === 0 ? firstRequiredRef : undefined)}
+                {isAadhaarField(field) && (
+                  <div className="aadhaar-privacy-notice" style={{ fontSize: '0.78rem', color: '#b45309', marginTop: '0.35rem', fontWeight: 500 }}>
+                    🔒 Only last 4 digits are stored. Enter the full Aadhaar manually before submission.
+                  </div>
+                )}
               </div>
             )
           })}
@@ -220,6 +233,11 @@ const DynamicReviewForm = ({
                 <div className="field-mapped-from">Mapped from: {field.matched_profile_key}</div>
               )}
               {renderField(field)}
+              {isAadhaarField(field) && (
+                <div className="aadhaar-privacy-notice" style={{ fontSize: '0.78rem', color: '#b45309', marginTop: '0.35rem', fontWeight: 500 }}>
+                  🔒 Only last 4 digits are stored. Enter the full Aadhaar manually before submission.
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -242,6 +260,11 @@ const DynamicReviewForm = ({
                 <span className="badge badge-optional">Optional</span>
               </div>
               {renderField(field)}
+              {isAadhaarField(field) && (
+                <div className="aadhaar-privacy-notice" style={{ fontSize: '0.78rem', color: '#b45309', marginTop: '0.35rem', fontWeight: 500 }}>
+                  🔒 Only last 4 digits are stored. Enter the full Aadhaar manually before submission.
+                </div>
+              )}
             </div>
           ))}
         </div>

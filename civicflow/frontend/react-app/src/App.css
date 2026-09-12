@@ -1270,6 +1270,10 @@ textarea {
   font-weight: 700;
   flex: 1;
   font-family: 'Outfit', sans-serif;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .session-url {
