@@ -66,7 +66,8 @@ def generate_fill_code(field: dict, value: str, session_id: str, b: PyBuilder) -
         b.add(f"target_loc = page.locator({selector_json})")
         b.add("if await target_loc.count() != 1:")
         b.indent()
-        b.add(f"refined = page.locator({json.dumps(f'div[role=\"listitem\"]:has-text(\"{raw_label}\") input, div[role=\"listitem\"]:has-text(\"{raw_label}\") textarea, input[aria-label=\"{raw_label}\"]')})")
+        fallback_sel_str = f'div[role="listitem"]:has-text("{raw_label}") input, div[role="listitem"]:has-text("{raw_label}") textarea, input[aria-label="{raw_label}"]'
+        b.add(f"refined = page.locator({json.dumps(fallback_sel_str)})")
         b.add("if await refined.count() > 0:")
         b.indent()
         b.add("target_loc = refined.first")

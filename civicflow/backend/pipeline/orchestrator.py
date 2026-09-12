@@ -456,6 +456,10 @@ async def node_executor(state: PipelineState) -> PipelineState:
     """Execute the generated Playwright script"""
     print(f"\n[Pipeline] Node: Executor - Running automation script")
     
+    if state.get("status") == "failed":
+        print(f"[Pipeline] [FAIL] Executor skipped — state status is already failed ({state.get('error')})")
+        return state
+    
     script_path = state.get("script_path")
     if not script_path:
         print("[Pipeline] [FAIL] Executor skipped — no script_path in state")
@@ -860,6 +864,10 @@ async def resume_pipeline(
         # Re-enter graph at scriptgen since data is confirmed
         try:
             state = await node_scriptgen(state)
+            if state.get("status") == "failed":
+                print(f"[Pipeline] [FAIL] ScriptGen failed during resume: {state.get('error')}")
+                return await session_store.load(session_id)
+
             state = await node_executor(state)
             
             if state["status"] == "completed":
