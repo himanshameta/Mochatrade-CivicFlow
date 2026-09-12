@@ -424,6 +424,15 @@ async def get_flat_user_profile(user_id: str) -> Dict:
         # Normalize
         normalized = normalize_profile_data(clean_profile)
 
+        # Fallback to user account email if email is missing in profile
+        if not normalized.get("email"):
+            try:
+                user_doc = await db.users.find_one({"user_id": user_id})
+                if user_doc and user_doc.get("email"):
+                    normalized["email"] = user_doc["email"].lower().strip()
+            except Exception as e:
+                print(f"[FieldMapper] Account email fallback failed: {e}")
+
         print(f"[FieldMapper] Loaded {len(normalized)} clean profile keys: {list(normalized.keys())}")
 
         return normalized

@@ -40,16 +40,20 @@ _memory_profiles: dict = {}
 async def get_memory_profile(user_id: str) -> dict:
     """Return flattened/canonical profile dictionary for user_id in local fallback mode."""
     p_data = _memory_profiles.get(user_id)
-    if not p_data:
-        return {}
     flat = {}
-    if isinstance(p_data, dict):
+    if p_data and isinstance(p_data, dict):
         for sec in ["basic_info", "contact", "identity", "education"]:
             sec_dict = p_data.get(sec, {})
             if isinstance(sec_dict, dict):
                 flat.update(sec_dict)
     from utils.generic_mapper import normalize_profile_data
-    return normalize_profile_data(flat)
+    normalized = normalize_profile_data(flat)
+    if not normalized.get("email"):
+        for email, user_obj in _memory_users.items():
+            if getattr(user_obj, "user_id", None) == user_id:
+                normalized["email"] = email
+                break
+    return normalized
 
 async def _save_user(user: UserDB) -> None:
     user.updated_at = datetime.utcnow()
@@ -134,6 +138,33 @@ async def register(request: RegisterRequestV2):
         await _save_user(user)
         print(f"[Auth API] User registered successfully: user_id={user.user_id}, email={email}")
         
+        # Seed initial user profile record with contact email
+        try:
+            from db.mongo import get_db
+            from models.user_models import UserProfileData, ContactInfo
+            from utils.encryption import encrypt_profile
+
+            initial_profile = UserProfileData(
+                user_id=user.user_id,
+                contact=ContactInfo(
+                    email=email,
+                    phone=request.phone or ""
+                )
+            )
+
+            db = await get_db()
+            if db is not None:
+                encrypted_dict = encrypt_profile(initial_profile.model_dump(), user.user_id)
+                await db.user_profiles.update_one(
+                    {"user_id": user.user_id},
+                    {"$set": encrypted_dict},
+                    upsert=True
+                )
+            else:
+                _memory_profiles[user.user_id] = initial_profile.model_dump()
+        except Exception as seed_err:
+            print(f"[Auth API] Warning: Failed to seed profile on registration: {seed_err}")
+
         # Optional: If this is a relative, link it to the parent right away
         if user.role == "relative" and user.parent_user_id:
             parent = await _get_user_by_id(user.parent_user_id)

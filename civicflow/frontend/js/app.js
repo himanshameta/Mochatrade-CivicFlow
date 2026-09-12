@@ -281,7 +281,10 @@ const App = (() => {
           gender:    document.getElementById('gender').value,
         },
         contact: {
+          email:   _userEmail || '',
           address: document.getElementById('address').value,
+          city:    document.getElementById('city')?.value || '',
+          state:   document.getElementById('state')?.value || '',
           pincode: document.getElementById('pincode').value,
         }
       });

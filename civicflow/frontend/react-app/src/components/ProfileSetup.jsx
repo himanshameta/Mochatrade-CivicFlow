@@ -56,6 +56,7 @@ const ProfileSetup = ({ user, showToast }) => {
         gender: profile.gender || '',
       },
       contact: {
+        email: user?.email || profile.email || '',
         phone: profile.phone || '',
         address: profile.address || '',
         city: profile.city || '',
